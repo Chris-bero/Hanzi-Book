@@ -1,0 +1,6 @@
+{
+  "name": "Hanzi Book Studio",
+  "description": "Automated Chinese character handwriting workbook generator with real Hanzi Writer stroke-order sequences and editable Microsoft Word (.docx) export.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
