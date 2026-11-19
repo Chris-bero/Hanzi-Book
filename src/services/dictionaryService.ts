@@ -1,4 +1,5 @@
 import { repository } from '../storage/db';
+import { translateChineseToArabic } from './arabicDictionary';
 import { extractChineseCharacters } from './strokeEngine';
 import { DictionaryCharRecord, DictionaryLookupResult } from '../types/workbook';
 
@@ -138,10 +139,14 @@ export async function lookupChineseText(
       text: cleanText,
       pinyin: '',
       meaning: '',
+      arabicMeaning: '',
       charBreakdowns: [],
       source: 'none',
     };
   }
+
+  const joined = chars.join('');
+  const arabicPromise = translateChineseToArabic(joined);
 
   const breakdowns: DictionaryLookupResult['charBreakdowns'] = [];
 
@@ -157,13 +162,15 @@ export async function lookupChineseText(
     });
   }
 
-  const joined = chars.join('');
+  const arabicMeaning = await arabicPromise;
+
   const builtinWord = BUILTIN_WORD_ENTRIES[joined];
   if (builtinWord) {
     return {
       text: joined,
       pinyin: builtinWord.pinyin,
       meaning: builtinWord.meaning,
+      arabicMeaning,
       charBreakdowns: breakdowns,
       source: 'builtin-word',
     };
@@ -175,6 +182,7 @@ export async function lookupChineseText(
       text: single.char,
       pinyin: single.pinyin,
       meaning: single.meaning,
+      arabicMeaning,
       charBreakdowns: breakdowns,
       source: single.pinyin || single.meaning ? 'makemeahanzi' : 'none',
     };
@@ -193,6 +201,7 @@ export async function lookupChineseText(
     text: joined,
     pinyin: combinedPinyin,
     meaning: combinedMeaning,
+    arabicMeaning,
     charBreakdowns: breakdowns,
     source: combinedPinyin || combinedMeaning ? 'partial' : 'none',
   };

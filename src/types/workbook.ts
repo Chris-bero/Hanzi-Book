@@ -28,6 +28,7 @@ export interface DictionaryLookupResult {
   text: string;
   pinyin: string;
   meaning: string;
+  arabicMeaning: string;
   charBreakdowns: Array<{
     char: string;
     pinyin: string;
@@ -52,8 +53,10 @@ export interface WorkbookEntry {
   text: string;
   pinyin: string;
   meaning: string;
+  arabicMeaning?: string;
   isManualPinyin: boolean;
   isManualMeaning: boolean;
+  isManualArabicMeaning?: boolean;
   order: number;
   charResults: CharacterStrokeResult[];
   totalStrokeCount: number;
@@ -94,6 +97,7 @@ export interface WorkbookSettings {
   traceGlyphColor: string;
   includeCoverPage: boolean;
   includeTableOfContents: boolean;
+  showArabicTranslation: boolean;
   authorName: string;
 }
 
@@ -123,6 +127,7 @@ export interface BatchQueueItem {
   text: string;
   pinyin?: string;
   meaning?: string;
+  arabicMeaning?: string;
 }
 
 export interface PersistedBatchJob {
@@ -184,6 +189,7 @@ export const DEFAULT_WORKBOOK_SETTINGS: WorkbookSettings = {
   traceGlyphColor: '#CFC6B8',
   includeCoverPage: true,
   includeTableOfContents: true,
+  showArabicTranslation: true,
   authorName: 'Hanzi Book Studio Press',
 };
 
@@ -208,6 +214,10 @@ export function normalizeWorkbookSettings(raw?: Partial<WorkbookSettings>): Work
       merged.gridSizePx = 54;
     }
     merged.layoutVersion = 3;
+  }
+
+  if (raw?.showArabicTranslation === undefined) {
+    merged.showArabicTranslation = true;
   }
 
   merged.traceBoxCount = Math.max(2, Math.min(4, merged.traceBoxCount || 2));

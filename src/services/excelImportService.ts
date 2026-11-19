@@ -11,6 +11,7 @@ export interface ParsedImportResult {
     characterCol: string;
     pinyinCol?: string;
     meaningCol?: string;
+    arabicCol?: string;
   };
 }
 
@@ -28,6 +29,18 @@ const CHAR_HEADER_ALIASES = [
 ];
 const PINYIN_HEADER_ALIASES = ['pinyin', 'pronunciation', 'reading', '拼音'];
 const MEANING_HEADER_ALIASES = ['meaning', 'english', 'definition', 'translation', 'gloss', '意思', '英文'];
+const ARABIC_HEADER_ALIASES = [
+  'arabic',
+  'ar',
+  'arabic meaning',
+  'arabic translation',
+  'العربية',
+  'عربي',
+  'المعنى',
+  'الترجمة',
+  'الترجمة العربية',
+  '阿拉伯语',
+];
 
 function findMatchingKey(keys: string[], aliases: string[]): string | undefined {
   return keys.find((k) => {
@@ -57,7 +70,11 @@ export async function parseSpreadsheetFile(file: File): Promise<ParsedImportResu
   const keys = Object.keys(rows[0]);
   const charKey = findMatchingKey(keys, CHAR_HEADER_ALIASES) ?? keys[0];
   const pinyinKey = findMatchingKey(keys, PINYIN_HEADER_ALIASES);
-  const meaningKey = findMatchingKey(keys, MEANING_HEADER_ALIASES);
+  const arabicKey = findMatchingKey(keys, ARABIC_HEADER_ALIASES);
+  const meaningKey = findMatchingKey(
+    keys.filter((k) => k !== arabicKey),
+    MEANING_HEADER_ALIASES
+  );
 
   const items: BatchQueueItem[] = [];
   let skippedRows = 0;
@@ -74,6 +91,7 @@ export async function parseSpreadsheetFile(file: File): Promise<ParsedImportResu
       text: chineseChars.join(''),
       pinyin: pinyinKey ? String(row[pinyinKey] ?? '').trim() || undefined : undefined,
       meaning: meaningKey ? String(row[meaningKey] ?? '').trim() || undefined : undefined,
+      arabicMeaning: arabicKey ? String(row[arabicKey] ?? '').trim() || undefined : undefined,
     });
   }
 
@@ -84,19 +102,20 @@ export async function parseSpreadsheetFile(file: File): Promise<ParsedImportResu
       characterCol: charKey,
       pinyinCol: pinyinKey,
       meaningCol: meaningKey,
+      arabicCol: arabicKey,
     },
   };
 }
 
 export function downloadImportTemplate(format: 'xlsx' | 'csv') {
   const sampleRows = [
-    { Character: '不', Pinyin: 'bù', Meaning: 'no, not; negative prefix' },
-    { Character: '我', Pinyin: 'wǒ', Meaning: 'I, me, my' },
-    { Character: '你', Pinyin: 'nǐ', Meaning: 'you' },
-    { Character: '好', Pinyin: 'hǎo', Meaning: 'good, fine, well' },
-    { Character: '你好', Pinyin: 'nǐ hǎo', Meaning: 'hello; hi' },
-    { Character: '学习', Pinyin: 'xué xí', Meaning: 'to study; to learn' },
-    { Character: '中国', Pinyin: 'Zhōng guó', Meaning: 'China' },
+    { Character: '不', Pinyin: 'bù', Meaning: 'no, not; negative prefix', Arabic: 'لا / ليس' },
+    { Character: '我', Pinyin: 'wǒ', Meaning: 'I, me, my', Arabic: 'أنا' },
+    { Character: '你', Pinyin: 'nǐ', Meaning: 'you', Arabic: 'أنت' },
+    { Character: '好', Pinyin: 'hǎo', Meaning: 'good, fine, well', Arabic: 'جيد / بخير' },
+    { Character: '你好', Pinyin: 'nǐ hǎo', Meaning: 'hello; hi', Arabic: 'مرحباً' },
+    { Character: '学习', Pinyin: 'xué xí', Meaning: 'to study; to learn', Arabic: 'يدرس / يتعلم' },
+    { Character: '中国', Pinyin: 'Zhōng guó', Meaning: 'China', Arabic: 'الصين' },
   ];
 
   const ws = XLSX.utils.json_to_sheet(sampleRows);
@@ -150,8 +169,10 @@ export async function createWorkbookEntryFromItem(
     text: cleanText,
     pinyin: item.pinyin?.trim() || lookup.pinyin,
     meaning: item.meaning?.trim() || lookup.meaning,
+    arabicMeaning: item.arabicMeaning?.trim() || lookup.arabicMeaning || '',
     isManualPinyin: Boolean(item.pinyin?.trim()),
     isManualMeaning: Boolean(item.meaning?.trim()),
+    isManualArabicMeaning: Boolean(item.arabicMeaning?.trim()),
     order,
     charResults,
     totalStrokeCount: charResults.reduce((sum, c) => sum + c.strokeCount, 0),

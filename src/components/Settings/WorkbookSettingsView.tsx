@@ -170,6 +170,17 @@ export const WorkbookSettingsView: React.FC<WorkbookSettingsViewProps> = ({
                 />
                 <span>Include Character Index / Table of Contents</span>
               </label>
+              <label className="flex items-center gap-2.5 text-xs text-ink cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.showArabicTranslation !== false}
+                  onChange={(e) => patch({ showArabicTranslation: e.target.checked })}
+                  className="accent-burgundy w-4 h-4"
+                />
+                <span>
+                  Show Arabic Translation (<span style={{ fontFamily: 'var(--font-arabic)' }}>العربية</span>) on Practice Sheets &amp; Index
+                </span>
+              </label>
             </div>
           </section>
 

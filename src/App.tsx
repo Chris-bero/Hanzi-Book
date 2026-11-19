@@ -6,6 +6,7 @@ import { BatchImportView } from './components/Import/BatchImportView';
 import { Sidebar } from './components/Layout/Sidebar';
 import { WorkbookPreviewView } from './components/Preview/WorkbookPreviewView';
 import { WorkbookSettingsView } from './components/Settings/WorkbookSettingsView';
+import { lookupLocalArabic } from './services/arabicDictionary';
 import { ensureDictionaryHydrated } from './services/dictionaryService';
 import { createWorkbookEntryFromItem } from './services/excelImportService';
 import { repository } from './storage/db';
@@ -45,16 +46,29 @@ export default function App() {
         if (!mounted) return;
 
         if (books.length > 0) {
-          const normalizedBooks = books.map((book) => ({
-            ...book,
-            settings: normalizeWorkbookSettings(book.settings),
-          }));
-          // Persist upgraded layout settings cleanly in IndexedDB
+          const normalizedBooks = books.map((book) => {
+            const entries = book.entries.map((entry) => {
+              if (entry.arabicMeaning && entry.arabicMeaning.trim()) return entry;
+              const localAr = lookupLocalArabic(entry.text);
+              return localAr ? { ...entry, arabicMeaning: localAr } : entry;
+            });
+            return {
+              ...book,
+              entries,
+              settings: normalizeWorkbookSettings(book.settings),
+            };
+          });
+          // Persist upgraded layout settings & backfilled Arabic meanings cleanly in IndexedDB
           for (let i = 0; i < normalizedBooks.length; i++) {
+            const arabicBackfilled = normalizedBooks[i].entries.some(
+              (e, idx) => (e.arabicMeaning ?? '') !== (books[i].entries[idx]?.arabicMeaning ?? '')
+            );
             if (
               books[i].settings?.layoutVersion !== 3 ||
               !books[i].settings?.boxFillMode ||
-              !books[i].settings?.boxDensity
+              !books[i].settings?.boxDensity ||
+              books[i].settings?.showArabicTranslation === undefined ||
+              arabicBackfilled
             ) {
               await repository.saveWorkbook(normalizedBooks[i]);
             }

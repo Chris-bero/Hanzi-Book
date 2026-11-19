@@ -103,7 +103,9 @@ export const BatchImportView: React.FC<BatchImportViewProps> = ({
       setSourceSummary(
         `${file.name} · ${parsed.items.length} valid entries (${parsed.skippedRows} rows skipped) · Columns: ${parsed.detectedColumns.characterCol}${
           parsed.detectedColumns.pinyinCol ? `, ${parsed.detectedColumns.pinyinCol}` : ''
-        }${parsed.detectedColumns.meaningCol ? `, ${parsed.detectedColumns.meaningCol}` : ''}`
+        }${parsed.detectedColumns.meaningCol ? `, ${parsed.detectedColumns.meaningCol}` : ''}${
+          parsed.detectedColumns.arabicCol ? `, ${parsed.detectedColumns.arabicCol}` : ''
+        }`
       );
     } catch (err) {
       setParseError(err instanceof Error ? err.message : 'Unable to parse file.');
@@ -120,7 +122,7 @@ export const BatchImportView: React.FC<BatchImportViewProps> = ({
 
     const parsed: BatchQueueItem[] = [];
     for (const line of lines) {
-      // Support tab/comma separated "Character, Pinyin, Meaning" or space-separated tokens
+      // Support tab/comma separated "Character, Pinyin, Meaning, Arabic" or space-separated tokens
       if (line.includes('\t') || line.includes(',')) {
         const parts = line.split(/[\t,]/).map((p) => p.trim());
         const chars = extractChineseCharacters(parts[0] ?? '').join('');
@@ -128,7 +130,8 @@ export const BatchImportView: React.FC<BatchImportViewProps> = ({
           parsed.push({
             text: chars,
             pinyin: parts[1] || undefined,
-            meaning: parts.slice(2).join(', ') || undefined,
+            meaning: parts[2] || undefined,
+            arabicMeaning: parts[3] || undefined,
           });
         }
       } else {
@@ -363,7 +366,8 @@ export const BatchImportView: React.FC<BatchImportViewProps> = ({
             </h2>
             <p className="mt-1 text-xs text-ink-muted">
               Columns are auto-detected for <strong>Character / Hanzi</strong>,{' '}
-              <strong>Pinyin</strong> (optional), and <strong>Meaning / English</strong> (optional).
+              <strong>Pinyin</strong>, <strong>Meaning / English</strong>, and{' '}
+              <strong>Arabic / العربية</strong> (all optional except Character).
             </p>
 
             <div
@@ -411,14 +415,15 @@ export const BatchImportView: React.FC<BatchImportViewProps> = ({
               High-Volume Paste Queue
             </h2>
             <p className="mt-1 text-xs text-ink-muted">
-              Paste 100–500+ characters or tab/comma-separated rows (Character, Pinyin, Meaning).
+              Paste 100–500+ characters or tab/comma-separated rows (Character, Pinyin, English,
+              Arabic).
             </p>
             <textarea
               rows={6}
               value={pasteText}
               onChange={(e) => setPasteText(e.target.value)}
               placeholder={
-                '不, bù, no / not\n我, wǒ, I / me\n你, nǐ, you\n好, hǎo, good\n你好, nǐ hǎo, hello'
+                '不, bù, no / not, لا / ليس\n我, wǒ, I / me, أنا\n你, nǐ, you, أنت\n好, hǎo, good, جيد / بخير\n你好, nǐ hǎo, hello, مرحباً'
               }
               className="mt-4 w-full border border-hairline-strong bg-white px-3.5 py-2.5 text-sm text-ink focus-visible:outline-2 focus-visible:outline-burgundy"
             />
@@ -563,9 +568,10 @@ export const BatchImportView: React.FC<BatchImportViewProps> = ({
               <thead>
                 <tr className="bg-ivory border-b border-hairline text-left text-ink-subtle">
                   <th className="py-2 px-3 w-12 text-center">#</th>
-                  <th className="py-2 px-3 w-28">Entry</th>
-                  <th className="py-2 px-3 w-36">Pinyin</th>
-                  <th className="py-2 px-3">Meaning</th>
+                  <th className="py-2 px-3 w-24">Entry</th>
+                  <th className="py-2 px-3 w-32">Pinyin</th>
+                  <th className="py-2 px-3">English Meaning</th>
+                  <th className="py-2 px-3 w-40 text-right">Arabic (العربية)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-hairline">
@@ -577,6 +583,13 @@ export const BatchImportView: React.FC<BatchImportViewProps> = ({
                     <td className="py-2 px-3 text-base text-ink">{item.text}</td>
                     <td className="py-2 px-3 text-burgundy">{item.pinyin || 'Auto-lookup'}</td>
                     <td className="py-2 px-3 text-ink-muted">{item.meaning || 'Auto-lookup'}</td>
+                    <td
+                      dir="rtl"
+                      className="py-2 px-3 text-right text-ink"
+                      style={{ fontFamily: 'var(--font-arabic)' }}
+                    >
+                      {item.arabicMeaning || 'Auto-lookup'}
+                    </td>
                   </tr>
                 ))}
               </tbody>

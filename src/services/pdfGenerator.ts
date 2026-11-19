@@ -238,7 +238,11 @@ function renderPaginatedSheetCanvas(
         strokeRows += Math.ceil(Math.max(1, ch.strokeCount || 1) / maxCols);
       }
     }
-    const minInfoH = isCompact ? Math.max(46, stageSizePx + 4) : Math.max(58, stageSizePx + 6);
+    const hasArabic =
+      settings.showArabicTranslation !== false && Boolean(entry.arabicMeaning?.trim());
+    const minInfoH = isCompact
+      ? Math.max(hasArabic ? 54 : 46, stageSizePx + 4)
+      : Math.max(hasArabic ? 66 : 58, stageSizePx + 6);
     const strokeH = strokeRows * stageSizePx + Math.max(0, strokeRows - 1) * stageGapPx;
     const upperH = Math.max(minInfoH, strokeH);
     const practiceH =
@@ -278,23 +282,41 @@ function renderPaginatedSheetCanvas(
 
     const measuredHeroW = ctx.measureText(entry.text).width;
     const textColX = contentX + Math.min(leftW * 0.5, measuredHeroW + 14);
+    const hasArabic =
+      settings.showArabicTranslation !== false && Boolean(entry.arabicMeaning?.trim());
+    const stackH = hasArabic ? (isCompact ? 50 : 60) : isCompact ? 40 : 44;
+    const infoStartY = bandTopY + Math.max(1, (metrics.upperH - stackH) / 2);
+
     ctx.textBaseline = 'top';
     ctx.fillStyle = settings.accentColor;
-    ctx.font = `600 ${isCompact ? 19 : 22}px "Plus Jakarta Sans", sans-serif`;
-    ctx.fillText(entry.pinyin || '—', textColX, bandTopY + Math.max(2, (metrics.upperH - 42) / 2));
+    ctx.font = `600 ${isCompact ? 18 : 21}px "Plus Jakarta Sans", sans-serif`;
+    ctx.fillText(entry.pinyin || '—', textColX, infoStartY);
 
     const strokeLabel = isMulti
       ? `${entry.totalStrokeCount} str (${entry.charResults.map((c) => c.strokeCount).join('+')})`
       : `${entry.totalStrokeCount} strokes`;
     ctx.fillStyle = '#5E544B';
-    ctx.font = `400 ${isCompact ? 14 : 16}px "Plus Jakarta Sans", sans-serif`;
-    const maxMeaningLen = isPortrait ? 20 : 32;
+    ctx.font = `400 ${isCompact ? 13 : 15}px "Plus Jakarta Sans", sans-serif`;
+    const maxMeaningLen = isPortrait ? 18 : 28;
     const clippedMeaning = (entry.meaning || 'No English meaning').slice(0, maxMeaningLen);
     ctx.fillText(
       `${clippedMeaning} · ${strokeLabel}`,
       textColX,
-      bandTopY + Math.max(2, (metrics.upperH - 42) / 2) + (isCompact ? 23 : 27)
+      infoStartY + (isCompact ? 20 : 24)
     );
+
+    if (hasArabic) {
+      ctx.save();
+      ctx.direction = 'rtl';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = '#1E1916';
+      ctx.font = `500 ${isCompact ? 14 : 16}px "Noto Sans Arabic", Tahoma, sans-serif`;
+      const arabicRightX = contentX + leftW - 4;
+      const clippedArabic = entry.arabicMeaning!.trim().slice(0, isPortrait ? 20 : 28);
+      ctx.fillText(clippedArabic, arabicRightX, infoStartY + (isCompact ? 35 : 42));
+      ctx.restore();
+    }
 
     // Subtle vertical divider between Vocab Info and Stroke Order
     ctx.fillStyle = '#E5DDD1';
@@ -408,6 +430,14 @@ export async function generateWorkbookPdf(
 
   if (entries.length === 0) {
     throw new Error('No entries selected for PDF export.');
+  }
+
+  if (typeof document !== 'undefined' && 'fonts' in document) {
+    try {
+      await document.fonts.ready;
+    } catch {
+      // Proceed even if fonts API rejects
+    }
   }
 
   const { settings } = workbook;

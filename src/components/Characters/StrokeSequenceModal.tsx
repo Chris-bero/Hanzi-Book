@@ -102,10 +102,22 @@ export const StrokeSequenceModal: React.FC<StrokeSequenceModalProps> = ({
               Stroke Sequence Inspector —{' '}
               <span style={{ fontFamily: settings.fontFamily }}>{entry.text}</span>
             </h2>
-            <div className="mt-1 flex items-center gap-2 text-xs text-ink-muted tabular-nums">
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-muted tabular-nums">
               <span className="font-semibold text-burgundy">{entry.pinyin || 'No pinyin'}</span>
               <span aria-hidden="true">·</span>
               <span>{entry.meaning || 'No English meaning'}</span>
+              {entry.arabicMeaning && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span
+                    dir="rtl"
+                    className="text-ink font-medium"
+                    style={{ fontFamily: 'var(--font-arabic)' }}
+                  >
+                    {entry.arabicMeaning}
+                  </span>
+                </>
+              )}
               <span aria-hidden="true">·</span>
               <span className="font-mono">{entry.totalStrokeCount} strokes</span>
             </div>

@@ -84,6 +84,15 @@ function hanziFont(settings: WorkbookSettings) {
   };
 }
 
+function arabicFont() {
+  return {
+    name: 'Arial',
+    cs: 'Arial',
+    ascii: 'Arial',
+    hAnsi: 'Arial',
+  };
+}
+
 function buildCoverPageBlocks(
   workbook: WorkbookProject,
   entries: WorkbookEntry[],
@@ -210,17 +219,35 @@ function buildIndexBlocks(
     }
   }
 
-  const colWidths = [
-    Math.round(contentWidthTwip * 0.06),
-    Math.round(contentWidthTwip * 0.14),
-    Math.round(contentWidthTwip * 0.17),
-    Math.round(contentWidthTwip * 0.39),
-    Math.round(contentWidthTwip * 0.08),
-    Math.round(contentWidthTwip * 0.08),
-    Math.round(contentWidthTwip * 0.08),
-  ];
+  const showArabic = settings.showArabicTranslation !== false;
+  const colWidths = showArabic
+    ? [
+        Math.round(contentWidthTwip * 0.05),
+        Math.round(contentWidthTwip * 0.12),
+        Math.round(contentWidthTwip * 0.14),
+        Math.round(contentWidthTwip * 0.29),
+        Math.round(contentWidthTwip * 0.19),
+        Math.round(contentWidthTwip * 0.07),
+        Math.round(contentWidthTwip * 0.07),
+        Math.round(contentWidthTwip * 0.07),
+      ]
+    : [
+        Math.round(contentWidthTwip * 0.06),
+        Math.round(contentWidthTwip * 0.14),
+        Math.round(contentWidthTwip * 0.17),
+        Math.round(contentWidthTwip * 0.39),
+        Math.round(contentWidthTwip * 0.08),
+        Math.round(contentWidthTwip * 0.08),
+        Math.round(contentWidthTwip * 0.08),
+      ];
 
-  const headerLabels = ['#', 'Vocabulary', 'Pinyin', 'English Meaning', 'Boxes', 'Strokes', 'Sheet'];
+  const headerLabels = showArabic
+    ? ['#', 'Vocabulary', 'Pinyin', 'English Meaning', 'Arabic (العربية)', 'Boxes', 'Strokes', 'Sheet']
+    : ['#', 'Vocabulary', 'Pinyin', 'English Meaning', 'Boxes', 'Strokes', 'Sheet'];
+
+  const arabicColIdx = showArabic ? 4 : -1;
+  const numericStartIdx = showArabic ? 5 : 4;
+
   const headerRow = new TableRow({
     tableHeader: true,
     children: headerLabels.map(
@@ -231,11 +258,16 @@ function buildIndexBlocks(
           margins: { top: 70, bottom: 70, left: 90, right: 90 },
           children: [
             new Paragraph({
-              alignment: i === 0 || i >= 4 ? AlignmentType.CENTER : AlignmentType.LEFT,
+              alignment:
+                i === 0 || i >= numericStartIdx
+                  ? AlignmentType.CENTER
+                  : i === arabicColIdx
+                  ? AlignmentType.RIGHT
+                  : AlignmentType.LEFT,
               children: [
                 new TextRun({
                   text: label,
-                  font: 'Calibri',
+                  font: i === arabicColIdx ? arabicFont() : 'Calibri',
                   size: 18,
                   bold: true,
                   color: accent,
@@ -251,15 +283,26 @@ function buildIndexBlocks(
     const boxes =
       Math.max(1, entry.charResults.length) * (entryBoxesPerRowMap.get(entry.id) ?? 10);
     const sheetNumber = entryPageMap.get(entry.id) ?? 1;
-    const cellsData = [
-      String(idx + 1),
-      entry.text,
-      entry.pinyin || '—',
-      entry.meaning || '—',
-      String(boxes),
-      String(entry.totalStrokeCount),
-      String(sheetNumber),
-    ];
+    const cellsData = showArabic
+      ? [
+          String(idx + 1),
+          entry.text,
+          entry.pinyin || '—',
+          entry.meaning || '—',
+          entry.arabicMeaning?.trim() || '—',
+          String(boxes),
+          String(entry.totalStrokeCount),
+          String(sheetNumber),
+        ]
+      : [
+          String(idx + 1),
+          entry.text,
+          entry.pinyin || '—',
+          entry.meaning || '—',
+          String(boxes),
+          String(entry.totalStrokeCount),
+          String(sheetNumber),
+        ];
 
     return new TableRow({
       children: cellsData.map(
@@ -270,13 +313,25 @@ function buildIndexBlocks(
             verticalAlign: VerticalAlign.CENTER,
             children: [
               new Paragraph({
-                alignment: i === 0 || i >= 4 ? AlignmentType.CENTER : AlignmentType.LEFT,
+                bidirectional: i === arabicColIdx,
+                alignment:
+                  i === 0 || i >= numericStartIdx
+                    ? AlignmentType.CENTER
+                    : i === arabicColIdx
+                    ? AlignmentType.RIGHT
+                    : AlignmentType.LEFT,
                 children: [
                   new TextRun({
                     text: val,
-                    font: i === 1 ? hanziFont(settings) : 'Calibri',
+                    font:
+                      i === 1
+                        ? hanziFont(settings)
+                        : i === arabicColIdx
+                        ? arabicFont()
+                        : 'Calibri',
                     size: i === 1 ? 24 : 18,
                     bold: i === 1 || i === 2,
+                    rightToLeft: i === arabicColIdx && val !== '—',
                     color: i === 2 ? accent : '1E1916',
                   }),
                 ],
@@ -346,11 +401,14 @@ async function buildEntryBandBlocks(
     ? `${entry.totalStrokeCount} str (${entry.charResults.map((c) => c.strokeCount).join('+')})`
     : `${entry.totalStrokeCount} ${entry.totalStrokeCount === 1 ? 'stroke' : 'strokes'}`;
 
-  // LEFT CELL: Vocabulary Info (Word + Pinyin + Strokes + English Meaning)
-  const heroHalfPt = isCompact ? (isMultiChar ? 38 : 48) : isMultiChar ? 48 : 64;
+  // LEFT CELL: Vocabulary Info (Word + Pinyin + Strokes + English Meaning + Optional Arabic)
+  const heroHalfPt = isCompact ? (isMultiChar ? 36 : 46) : isMultiChar ? 48 : 64;
+  const showArabicRow =
+    settings.showArabicTranslation !== false && Boolean(entry.arabicMeaning?.trim());
+
   const leftParagraphs: Paragraph[] = [
     new Paragraph({
-      spacing: { before: 10, after: 20 },
+      spacing: { before: 6, after: 12 },
       children: [
         new TextRun({
           text: entry.text,
@@ -361,30 +419,47 @@ async function buildEntryBandBlocks(
         new TextRun({
           text: `  ${entry.pinyin || '—'}`,
           font: 'Calibri',
-          size: isCompact ? 22 : 26,
+          size: isCompact ? 21 : 26,
           bold: true,
           color: accent,
         }),
       ],
     }),
     new Paragraph({
-      spacing: { before: 0, after: 10 },
+      spacing: { before: 0, after: showArabicRow ? 8 : 10 },
       children: [
         new TextRun({
           text: `${entry.meaning || 'No English meaning'}  ·  `,
           font: 'Calibri',
-          size: isCompact ? 16 : 18,
+          size: isCompact ? 15 : 18,
           color: '5E544B',
         }),
         new TextRun({
           text: strokeBreakdown,
           font: 'Calibri',
-          size: isCompact ? 15 : 17,
+          size: isCompact ? 14 : 17,
           bold: true,
           color: '1E1916',
         }),
       ],
     }),
+    ...(showArabicRow
+      ? [
+          new Paragraph({
+            spacing: { before: 0, after: 8 },
+            alignment: AlignmentType.LEFT,
+            children: [
+              new TextRun({
+                text: entry.arabicMeaning!.trim(),
+                font: arabicFont(),
+                size: isCompact ? 17 : 20,
+                rightToLeft: true,
+                color: '1E1916',
+              }),
+            ],
+          }),
+        ]
+      : []),
   ];
 
   // RIGHT CELL: Stroke-Order Diagrams directly beside vocabulary info

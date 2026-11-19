@@ -6,10 +6,12 @@ import {
   CheckCircle2,
   Edit3,
   Eye,
+  Languages,
   Plus,
   Search,
   Trash2,
 } from 'lucide-react';
+import { translateChineseToArabic } from '../../services/arabicDictionary';
 import { lookupChineseText } from '../../services/dictionaryService';
 import { createWorkbookEntryFromItem } from '../../services/excelImportService';
 import { extractChineseCharacters, resolveEntryStrokes } from '../../services/strokeEngine';
@@ -41,8 +43,10 @@ export const CharacterManagerView: React.FC<CharacterManagerViewProps> = ({
   const [textInput, setTextInput] = useState('');
   const [pinyinInput, setPinyinInput] = useState('');
   const [meaningInput, setMeaningInput] = useState('');
+  const [arabicInput, setArabicInput] = useState('');
   const [bulkInput, setBulkInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isFillingArabic, setIsFillingArabic] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -52,6 +56,7 @@ export const CharacterManagerView: React.FC<CharacterManagerViewProps> = ({
   const [editText, setEditText] = useState('');
   const [editPinyin, setEditPinyin] = useState('');
   const [editMeaning, setEditMeaning] = useState('');
+  const [editArabic, setEditArabic] = useState('');
 
   const [previewEntry, setPreviewEntry] = useState<WorkbookEntry | null>(null);
 
@@ -66,6 +71,7 @@ export const CharacterManagerView: React.FC<CharacterManagerViewProps> = ({
       if (!active) return;
       setPinyinInput((prev) => (prev.trim() ? prev : lookup.pinyin));
       setMeaningInput((prev) => (prev.trim() ? prev : lookup.meaning));
+      setArabicInput((prev) => (prev.trim() ? prev : lookup.arabicMeaning));
     }, 180);
 
     return () => {
@@ -84,7 +90,8 @@ export const CharacterManagerView: React.FC<CharacterManagerViewProps> = ({
       return (
         entry.text.includes(q) ||
         entry.pinyin.toLowerCase().includes(q) ||
-        entry.meaning.toLowerCase().includes(q)
+        entry.meaning.toLowerCase().includes(q) ||
+        (entry.arabicMeaning ?? '').toLowerCase().includes(q)
       );
     });
   }, [workbook, searchQuery, statusFilter]);
@@ -120,7 +127,12 @@ export const CharacterManagerView: React.FC<CharacterManagerViewProps> = ({
     setFeedback(null);
     try {
       const { entry } = await createWorkbookEntryFromItem(
-        { text: textInput, pinyin: pinyinInput, meaning: meaningInput },
+        {
+          text: textInput,
+          pinyin: pinyinInput,
+          meaning: meaningInput,
+          arabicMeaning: arabicInput,
+        },
         workbook.entries.length
       );
       if (entry) {
@@ -128,6 +140,7 @@ export const CharacterManagerView: React.FC<CharacterManagerViewProps> = ({
         setTextInput('');
         setPinyinInput('');
         setMeaningInput('');
+        setArabicInput('');
         setFeedback(
           entry.status === 'ready'
             ? `Added “${entry.text}” (${entry.totalStrokeCount} strokes verified).`
@@ -207,11 +220,45 @@ export const CharacterManagerView: React.FC<CharacterManagerViewProps> = ({
     await onUpdateEntries(remaining);
   };
 
+  const handleAutoFillArabic = async () => {
+    const missing = workbook.entries.filter((e) => !e.arabicMeaning?.trim());
+    if (missing.length === 0) return;
+
+    setIsFillingArabic(true);
+    setFeedback(null);
+    try {
+      let filled = 0;
+      const updated = [...workbook.entries];
+      for (let i = 0; i < updated.length; i++) {
+        if (!updated[i].arabicMeaning?.trim()) {
+          const ar = await translateChineseToArabic(updated[i].text);
+          if (ar) {
+            updated[i] = {
+              ...updated[i],
+              arabicMeaning: ar,
+              updatedAt: Date.now(),
+            };
+            filled++;
+          }
+        }
+      }
+      await onUpdateEntries(updated);
+      setFeedback(
+        filled > 0
+          ? `Translated ${filled} ${filled === 1 ? 'entry' : 'entries'} into Arabic.`
+          : 'No additional Arabic translations could be resolved automatically. You can edit any row manually.'
+      );
+    } finally {
+      setIsFillingArabic(false);
+    }
+  };
+
   const startEdit = (entry: WorkbookEntry) => {
     setEditingId(entry.id);
     setEditText(entry.text);
     setEditPinyin(entry.pinyin);
     setEditMeaning(entry.meaning);
+    setEditArabic(entry.arabicMeaning ?? '');
   };
 
   const saveEdit = async (id: string) => {
@@ -242,8 +289,10 @@ export const CharacterManagerView: React.FC<CharacterManagerViewProps> = ({
               text: cleanNewText,
               pinyin: editPinyin.trim(),
               meaning: editMeaning.trim(),
+              arabicMeaning: editArabic.trim(),
               isManualPinyin: true,
               isManualMeaning: true,
+              isManualArabicMeaning: true,
               charResults,
               totalStrokeCount: charResults.reduce((sum, c) => sum + c.strokeCount, 0),
               status,
@@ -260,6 +309,7 @@ export const CharacterManagerView: React.FC<CharacterManagerViewProps> = ({
   };
 
   const unsupportedCount = workbook.entries.filter((e) => e.status !== 'ready').length;
+  const missingArabicCount = workbook.entries.filter((e) => !e.arabicMeaning?.trim()).length;
   const allVisibleSelected =
     filteredEntries.length > 0 && filteredEntries.every((e) => selectedEntryIds.has(e.id));
 
@@ -283,6 +333,19 @@ export const CharacterManagerView: React.FC<CharacterManagerViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
+          {missingArabicCount > 0 && (
+            <button
+              type="button"
+              onClick={handleAutoFillArabic}
+              disabled={isFillingArabic || isSubmitting}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium border border-hairline-strong bg-white text-ink hover:bg-ivory-deep disabled:opacity-50 transition-colors cursor-pointer whitespace-nowrap"
+            >
+              <Languages className="w-3.5 h-3.5 text-burgundy" />
+              {isFillingArabic
+                ? 'Translating to Arabic…'
+                : `Auto-Fill Arabic (${missingArabicCount})`}
+            </button>
+          )}
           <button
             type="button"
             onClick={handleLoadTestSet}
@@ -336,7 +399,7 @@ export const CharacterManagerView: React.FC<CharacterManagerViewProps> = ({
 
         {inputMode === 'single' ? (
           <form onSubmit={handleAddSingle} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
                 <label
                   htmlFor="hanzi-input"
@@ -352,6 +415,7 @@ export const CharacterManagerView: React.FC<CharacterManagerViewProps> = ({
                     setTextInput(e.target.value);
                     setPinyinInput('');
                     setMeaningInput('');
+                    setArabicInput('');
                   }}
                   placeholder="e.g. 不, 我, or 你好"
                   className="w-full border border-hairline-strong bg-white px-3.5 py-2.5 text-sm text-ink focus-visible:outline-2 focus-visible:outline-burgundy"
@@ -389,6 +453,25 @@ export const CharacterManagerView: React.FC<CharacterManagerViewProps> = ({
                   onChange={(e) => setMeaningInput(e.target.value)}
                   placeholder="e.g. hello; hi"
                   className="w-full border border-hairline-strong bg-white px-3.5 py-2.5 text-sm text-ink focus-visible:outline-2 focus-visible:outline-burgundy"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="arabic-input"
+                  className="block text-xs font-semibold text-ink-muted mb-1.5"
+                >
+                  Arabic Translation (الترجمة العربية)
+                </label>
+                <input
+                  id="arabic-input"
+                  type="text"
+                  dir="rtl"
+                  value={arabicInput}
+                  onChange={(e) => setArabicInput(e.target.value)}
+                  placeholder="مثال: مرحباً"
+                  className="w-full border border-hairline-strong bg-white px-3.5 py-2.5 text-sm text-ink focus-visible:outline-2 focus-visible:outline-burgundy"
+                  style={{ fontFamily: 'var(--font-arabic)' }}
                 />
               </div>
             </div>
@@ -462,8 +545,8 @@ export const CharacterManagerView: React.FC<CharacterManagerViewProps> = ({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Filter by character, pinyin, meaning…"
-                className="pl-8 pr-3 py-1.5 text-xs border border-hairline-strong bg-ivory/60 text-ink w-64 focus-visible:outline-2 focus-visible:outline-burgundy"
+                placeholder="Filter by character, pinyin, English, or Arabic…"
+                className="pl-8 pr-3 py-1.5 text-xs border border-hairline-strong bg-ivory/60 text-ink w-72 focus-visible:outline-2 focus-visible:outline-burgundy"
               />
             </div>
 
@@ -520,11 +603,12 @@ export const CharacterManagerView: React.FC<CharacterManagerViewProps> = ({
                 <tr className="border-b border-hairline bg-ivory/70 text-left text-[11px] font-semibold text-ink-subtle">
                   <th className="py-2.5 px-4 w-10"></th>
                   <th className="py-2.5 px-2 w-12 text-center">#</th>
-                  <th className="py-2.5 px-3 w-28">Character</th>
-                  <th className="py-2.5 px-3 w-36">Pinyin</th>
+                  <th className="py-2.5 px-3 w-24">Character</th>
+                  <th className="py-2.5 px-3 w-32">Pinyin</th>
                   <th className="py-2.5 px-3">English Meaning</th>
-                  <th className="py-2.5 px-3 w-24 text-right">Strokes</th>
-                  <th className="py-2.5 px-3 w-28">Data</th>
+                  <th className="py-2.5 px-3 w-40 text-right">Arabic (العربية)</th>
+                  <th className="py-2.5 px-3 w-20 text-right">Strokes</th>
+                  <th className="py-2.5 px-3 w-24">Data</th>
                   <th className="py-2.5 px-4 text-right">Actions</th>
                 </tr>
               </thead>
@@ -555,8 +639,8 @@ export const CharacterManagerView: React.FC<CharacterManagerViewProps> = ({
                       </td>
 
                       {isEditing ? (
-                        <td colSpan={6} className="py-3 px-3">
-                          <div className="grid grid-cols-1 md:grid-cols-[120px_160px_1fr_auto] gap-2.5 items-center">
+                        <td colSpan={7} className="py-3 px-3">
+                          <div className="grid grid-cols-1 md:grid-cols-[100px_135px_1fr_170px_auto] gap-2.5 items-center">
                             <input
                               type="text"
                               value={editText}
@@ -579,6 +663,16 @@ export const CharacterManagerView: React.FC<CharacterManagerViewProps> = ({
                               placeholder="English meaning"
                               className="border border-hairline-strong px-2.5 py-1.5 text-sm"
                               aria-label="Edit meaning"
+                            />
+                            <input
+                              type="text"
+                              dir="rtl"
+                              value={editArabic}
+                              onChange={(e) => setEditArabic(e.target.value)}
+                              placeholder="الترجمة العربية"
+                              className="border border-hairline-strong px-2.5 py-1.5 text-sm"
+                              style={{ fontFamily: 'var(--font-arabic)' }}
+                              aria-label="Edit Arabic translation"
                             />
                             <div className="flex items-center gap-2">
                               <button
@@ -612,6 +706,13 @@ export const CharacterManagerView: React.FC<CharacterManagerViewProps> = ({
                           </td>
                           <td className="py-3 px-3 text-ink-muted text-xs leading-relaxed">
                             {entry.meaning || '—'}
+                          </td>
+                          <td
+                            dir="rtl"
+                            className="py-3 px-3 text-right text-ink text-xs leading-relaxed font-medium"
+                            style={{ fontFamily: 'var(--font-arabic)' }}
+                          >
+                            {entry.arabicMeaning || '—'}
                           </td>
                           <td className="py-3 px-3 text-right font-mono text-xs text-ink tabular-nums">
                             {entry.totalStrokeCount}

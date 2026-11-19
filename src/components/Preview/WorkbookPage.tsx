@@ -136,7 +136,7 @@ export const WorkbookPage: React.FC<WorkbookPageProps> = ({
                         className="font-semibold leading-tight truncate"
                         style={{
                           color: settings.accentColor,
-                          fontSize: isCompact ? '13px' : '16px',
+                          fontSize: isCompact ? '12.5px' : '15.5px',
                         }}
                       >
                         {entry.pinyin || '—'}
@@ -146,15 +146,29 @@ export const WorkbookPage: React.FC<WorkbookPageProps> = ({
                       </span>
                     </div>
                     <p
-                      className="text-ink-muted m-0 truncate"
+                      className="text-ink-muted m-0 truncate leading-tight"
                       title={entry.meaning}
                       style={{
-                        fontSize: isCompact ? '10.5px' : '12.5px',
+                        fontSize: isCompact ? '10px' : '12px',
                         marginTop: '1px',
                       }}
                     >
                       {entry.meaning || 'No English meaning provided.'}
                     </p>
+                    {settings.showArabicTranslation !== false && entry.arabicMeaning?.trim() && (
+                      <p
+                        dir="rtl"
+                        className="text-ink font-medium m-0 truncate leading-tight text-left"
+                        title={entry.arabicMeaning}
+                        style={{
+                          fontFamily: 'var(--font-arabic)',
+                          fontSize: isCompact ? '10.5px' : '12.5px',
+                          marginTop: '1px',
+                        }}
+                      >
+                        {entry.arabicMeaning}
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -371,12 +385,15 @@ export const WorkbookIndexPreview: React.FC<{
               style={{ backgroundColor: settings.gridBgColor, color: settings.accentColor }}
             >
               <th className="py-2 px-3 w-12 text-center">#</th>
-              <th className="py-2 px-3 w-28">Vocabulary</th>
-              <th className="py-2 px-3 w-36">Pinyin</th>
+              <th className="py-2 px-3 w-24">Vocabulary</th>
+              <th className="py-2 px-3 w-32">Pinyin</th>
               <th className="py-2 px-3">English Meaning</th>
-              <th className="py-2 px-3 w-24 text-center">Boxes</th>
+              {settings.showArabicTranslation !== false && (
+                <th className="py-2 px-3 w-40 text-right">Arabic (العربية)</th>
+              )}
+              <th className="py-2 px-3 w-20 text-center">Boxes</th>
               <th className="py-2 px-3 w-20 text-center">Strokes</th>
-              <th className="py-2 px-3 w-20 text-center">Sheet</th>
+              <th className="py-2 px-3 w-16 text-center">Sheet</th>
             </tr>
           </thead>
           <tbody>
@@ -395,6 +412,15 @@ export const WorkbookIndexPreview: React.FC<{
                   {entry.pinyin || '—'}
                 </td>
                 <td className="py-2 px-3 text-ink-muted">{entry.meaning || '—'}</td>
+                {settings.showArabicTranslation !== false && (
+                  <td
+                    dir="rtl"
+                    className="py-2 px-3 text-right text-ink font-medium"
+                    style={{ fontFamily: 'var(--font-arabic)' }}
+                  >
+                    {entry.arabicMeaning || '—'}
+                  </td>
+                )}
                 <td className="py-2 px-3 text-center font-mono text-xs tabular-nums">
                   {Math.max(1, entry.charResults.length) *
                     (entryBoxesPerRowMap.get(entry.id) ?? 10)}
