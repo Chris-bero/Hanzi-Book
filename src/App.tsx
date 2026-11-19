@@ -51,7 +51,11 @@ export default function App() {
           }));
           // Persist upgraded layout settings cleanly in IndexedDB
           for (let i = 0; i < normalizedBooks.length; i++) {
-            if (books[i].settings?.layoutVersion !== 2 || books[i].settings?.traceBoxCount !== 2 || books[i].settings?.emptyBoxCount !== 8) {
+            if (
+              books[i].settings?.layoutVersion !== 3 ||
+              !books[i].settings?.boxFillMode ||
+              !books[i].settings?.boxDensity
+            ) {
               await repository.saveWorkbook(normalizedBooks[i]);
             }
           }

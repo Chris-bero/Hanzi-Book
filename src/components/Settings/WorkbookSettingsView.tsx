@@ -1,12 +1,9 @@
 import React, { useMemo } from 'react';
-import { Eye, Lock, RotateCcw } from 'lucide-react';
+import { Eye, LayoutGrid, RotateCcw } from 'lucide-react';
+import { paginateWorkbookEntries } from '../../services/layoutPagination';
 import {
-  MANDATORY_EMPTY_BOXES,
-  MANDATORY_TOTAL_BOXES,
-  MANDATORY_TRACE_BOXES,
-  paginateWorkbookEntries,
-} from '../../services/layoutPagination';
-import {
+  BoxDensity,
+  BoxFillMode,
   DEFAULT_WORKBOOK_SETTINGS,
   GridStyle,
   HANZI_FONT_MAP,
@@ -61,9 +58,7 @@ export const WorkbookSettingsView: React.FC<WorkbookSettingsViewProps> = ({
     onUpdateSettings({
       ...settings,
       ...partial,
-      traceBoxCount: MANDATORY_TRACE_BOXES,
-      emptyBoxCount: MANDATORY_EMPTY_BOXES,
-      layoutVersion: 2,
+      layoutVersion: 3,
     });
   };
 
@@ -239,8 +234,8 @@ export const WorkbookSettingsView: React.FC<WorkbookSettingsViewProps> = ({
                   {settings.charactersPerPage} / page
                 </span>
               </div>
-              <div className="grid grid-cols-6 bg-ivory p-0.5 border border-hairline">
-                {([1, 2, 3, 4, 5, 6] as Array<1 | 2 | 3 | 4 | 5 | 6>).map((num) => (
+              <div className="grid grid-cols-7 bg-ivory p-0.5 border border-hairline">
+                {([1, 2, 3, 4, 5, 6, 7] as Array<1 | 2 | 3 | 4 | 5 | 6 | 7>).map((num) => (
                   <button
                     key={num}
                     type="button"
@@ -256,8 +251,8 @@ export const WorkbookSettingsView: React.FC<WorkbookSettingsViewProps> = ({
                 ))}
               </div>
               <p className="mt-1.5 text-[11px] text-ink-subtle m-0">
-                Default target is 5 entries per A4 Landscape sheet. Multi-character words
-                automatically paginate to keep boxes readable.
+                Default is 5 entries per A4 Landscape sheet (up to 7 in Compact density).
+                Multi-character words auto-paginate to prevent overflow.
               </p>
             </div>
 
@@ -278,31 +273,113 @@ export const WorkbookSettingsView: React.FC<WorkbookSettingsViewProps> = ({
             </div>
           </section>
 
-          {/* Mandatory 10-Box Practice Standard */}
+          {/* Practice Grid Maximization & Density */}
           <section className="bg-white border border-hairline p-5 space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-hairline">
               <h2 className="font-display text-xl font-bold text-ink m-0">
-                Practice Grid Standard
+                Practice Grid &amp; Density
               </h2>
-              <span className="inline-flex items-center gap-1 font-mono text-xs text-burgundy font-semibold tabular-nums">
-                <Lock className="w-3 h-3" />
-                {MANDATORY_TOTAL_BOXES} boxes / char
+              <span className="inline-flex items-center gap-1.5 font-mono text-xs text-burgundy font-semibold tabular-nums">
+                <LayoutGrid className="w-3.5 h-3.5" />
+                {firstSheet ? `${firstSheet.boxesPerRow} boxes / char` : 'Full Width'}
               </span>
             </div>
 
-            <div className="bg-ivory border border-hairline px-3.5 py-3 text-xs text-ink-muted space-y-1">
-              <div className="font-semibold text-ink">
-                Mandatory 10-Box Distribution (Preview &amp; Word Export)
-              </div>
-              <div className="font-mono text-[11px] tabular-nums">
-                Boxes 1–{MANDATORY_TRACE_BOXES}: Light-gray tracing · Boxes{' '}
-                {MANDATORY_TRACE_BOXES + 1}–{MANDATORY_TOTAL_BOXES}: {MANDATORY_EMPTY_BOXES} empty
-                editable guideline boxes
-              </div>
-              <div className="text-[11px] text-ink-subtle">
-                Multi-character words (e.g. 你好) receive 10 independent boxes for each character.
+            <div>
+              <span className="block text-xs font-semibold text-ink-muted mb-1.5">
+                Row Fill Mode
+              </span>
+              <div className="grid grid-cols-2 bg-ivory p-0.5 border border-hairline">
+                {(
+                  [
+                    ['maximize', 'Maximize Full Width'],
+                    ['fixed10', 'Fixed 10 Boxes'],
+                  ] as Array<[BoxFillMode, string]>
+                ).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => patch({ boxFillMode: mode })}
+                    className={`py-1.5 text-xs font-semibold cursor-pointer ${
+                      settings.boxFillMode === mode
+                        ? 'bg-white text-burgundy'
+                        : 'text-ink-muted hover:text-ink'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
             </div>
+
+            <div>
+              <span className="block text-xs font-semibold text-ink-muted mb-1.5">
+                Box Size Density
+              </span>
+              <div className="grid grid-cols-3 bg-ivory p-0.5 border border-hairline">
+                {(
+                  [
+                    ['compact', 'Compact (~12mm)'],
+                    ['standard', 'Standard (~14mm)'],
+                    ['large', 'Large (~16mm)'],
+                  ] as Array<[BoxDensity, string]>
+                ).map(([density, label]) => (
+                  <button
+                    key={density}
+                    type="button"
+                    onClick={() => patch({ boxDensity: density })}
+                    className={`py-1.5 text-xs font-semibold cursor-pointer ${
+                      settings.boxDensity === density
+                        ? 'bg-white text-burgundy'
+                        : 'text-ink-muted hover:text-ink'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div className="flex justify-between text-xs mb-1.5">
+                <span className="font-semibold text-ink-muted">Tracing Boxes per Row</span>
+                <span className="font-mono text-burgundy font-semibold tabular-nums">
+                  Boxes 1–{settings.traceBoxCount}
+                </span>
+              </div>
+              <div className="grid grid-cols-3 bg-ivory p-0.5 border border-hairline">
+                {[2, 3, 4].map((count) => (
+                  <button
+                    key={count}
+                    type="button"
+                    onClick={() => patch({ traceBoxCount: count })}
+                    className={`py-1.5 text-xs font-semibold font-mono cursor-pointer ${
+                      settings.traceBoxCount === count
+                        ? 'bg-white text-burgundy'
+                        : 'text-ink-muted hover:text-ink'
+                    }`}
+                  >
+                    {count} Trace
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {firstSheet && (
+              <div className="bg-ivory border border-hairline px-3.5 py-2.5 text-xs text-ink-muted space-y-0.5">
+                <div className="font-semibold text-ink tabular-nums">
+                  Sheet 1 Capacity: {firstSheet.totalBoxesOnPage} Total Practice Boxes
+                </div>
+                <div className="font-mono text-[11px] tabular-nums">
+                  {firstSheet.boxesPerRow} boxes/char · Boxes 1–{firstSheet.traceBoxes} tracing ·
+                  Boxes {firstSheet.traceBoxes + 1}–{firstSheet.boxesPerRow} empty ({firstSheet.emptyBoxes})
+                </div>
+                <div className="text-[11px] text-ink-subtle">
+                  Each character of multi-character words (e.g. 你好) gets its own full independent
+                  row.
+                </div>
+              </div>
+            )}
 
             <div>
               <span className="block text-xs font-semibold text-ink-muted mb-1.5">
@@ -441,8 +518,9 @@ export const WorkbookSettingsView: React.FC<WorkbookSettingsViewProps> = ({
             <span className="text-xs font-semibold text-ink-muted">Live Sheet 1 Preview</span>
             <span className="font-mono text-[11px] text-ink-subtle tabular-nums">
               {settings.pageSize} {settings.orientation} ·{' '}
-              {firstSheet ? `${firstSheet.entries.length} entries on page 1` : 'Empty'} · 10
-              boxes/char
+              {firstSheet
+                ? `${firstSheet.entries.length} entries · ${firstSheet.boxesPerRow} boxes/char (${firstSheet.totalBoxesOnPage} boxes)`
+                : 'Empty'}
             </span>
           </div>
 

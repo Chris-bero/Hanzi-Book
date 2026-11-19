@@ -66,11 +66,15 @@ export type PageSize = 'A4' | 'A3';
 export type PageOrientation = 'landscape' | 'portrait';
 export type GridStyle = 'mi' | 'tian' | 'cross';
 export type HanziFontOption = 'kaiti' | 'serif' | 'sans';
+export type BoxFillMode = 'maximize' | 'fixed10';
+export type BoxDensity = 'compact' | 'standard' | 'large';
 
 export interface WorkbookSettings {
   layoutVersion?: number;
   pageSize: PageSize;
   orientation: PageOrientation;
+  boxFillMode: BoxFillMode;
+  boxDensity: BoxDensity;
   traceBoxCount: number;
   emptyBoxCount: number;
   gridStyle: GridStyle;
@@ -78,7 +82,7 @@ export interface WorkbookSettings {
   strokeStageSizePx: number;
   gridSizePx: number;
   pageMarginMm: number;
-  charactersPerPage: 1 | 2 | 3 | 4 | 5 | 6;
+  charactersPerPage: 1 | 2 | 3 | 4 | 5 | 6 | 7;
   fontOption: HanziFontOption;
   fontFamily: string;
   wordFontName: string;
@@ -156,9 +160,11 @@ export const HANZI_FONT_MAP: Record<
 };
 
 export const DEFAULT_WORKBOOK_SETTINGS: WorkbookSettings = {
-  layoutVersion: 2,
+  layoutVersion: 3,
   pageSize: 'A4',
   orientation: 'landscape',
+  boxFillMode: 'maximize',
+  boxDensity: 'standard',
   traceBoxCount: 2,
   emptyBoxCount: 8,
   gridStyle: 'mi',
@@ -182,9 +188,8 @@ export const DEFAULT_WORKBOOK_SETTINGS: WorkbookSettings = {
 };
 
 /**
- * Ensures any persisted workbook always adheres to the mandatory 10-box rule
- * (Boxes 1–2 tracing, Boxes 3–10 empty) and upgrades v1 defaults cleanly to
- * the 5-entries-per-A4-Landscape publishing target.
+ * Normalizes persisted workbooks to enforce minimum 10-box / 2-trace standard
+ * and upgrade older saved workbooks cleanly to v3 maximized full-width boxes.
  */
 export function normalizeWorkbookSettings(raw?: Partial<WorkbookSettings>): WorkbookSettings {
   const merged: WorkbookSettings = {
@@ -192,19 +197,21 @@ export function normalizeWorkbookSettings(raw?: Partial<WorkbookSettings>): Work
     ...(raw ?? {}),
   };
 
-  // Upgrade older v1 saved projects to the new 5-per-page A4 Landscape default
-  if (!raw?.layoutVersion || raw.layoutVersion < 2) {
-    merged.charactersPerPage = 5;
-    merged.pageMarginMm = 10;
-    merged.characterSizePx = 46;
-    merged.strokeStageSizePx = 38;
-    merged.gridSizePx = 54;
-    merged.layoutVersion = 2;
+  if (!raw?.layoutVersion || raw.layoutVersion < 3) {
+    merged.boxFillMode = 'maximize';
+    merged.boxDensity = 'standard';
+    if (!raw?.layoutVersion || raw.layoutVersion < 2) {
+      merged.charactersPerPage = 5;
+      merged.pageMarginMm = 10;
+      merged.characterSizePx = 46;
+      merged.strokeStageSizePx = 38;
+      merged.gridSizePx = 54;
+    }
+    merged.layoutVersion = 3;
   }
 
-  // Enforce mandatory 10-box practice distribution (Boxes 1–2 trace, Boxes 3–10 empty)
-  merged.traceBoxCount = 2;
-  merged.emptyBoxCount = 8;
+  merged.traceBoxCount = Math.max(2, Math.min(4, merged.traceBoxCount || 2));
+  merged.emptyBoxCount = Math.max(8, merged.emptyBoxCount || 8);
 
   return merged;
 }

@@ -2,9 +2,6 @@ import React from 'react';
 import {
   canInlineMultiCharStrokes,
   getPageDimensionsMm,
-  MANDATORY_EMPTY_BOXES,
-  MANDATORY_TOTAL_BOXES,
-  MANDATORY_TRACE_BOXES,
   PaginatedSheet,
   paginateWorkbookEntries,
 } from '../../services/layoutPagination';
@@ -67,11 +64,11 @@ export const WorkbookPage: React.FC<WorkbookPageProps> = ({
         className="flex items-center justify-between pb-1.5 border-b-2 text-[10.5px] font-medium tracking-[0.05em] text-ink-subtle"
         style={{ borderBottomColor: settings.accentColor }}
       >
-        <span className="truncate max-w-[55%] text-ink-muted font-semibold">{workbookTitle}</span>
+        <span className="truncate max-w-[52%] text-ink-muted font-semibold">{workbookTitle}</span>
         <span className="font-mono tabular-nums whitespace-nowrap">
           {settings.pageSize} {settings.orientation === 'landscape' ? 'Landscape' : 'Portrait'} ·{' '}
-          {sheet.entries.length} {sheet.entries.length === 1 ? 'Entry' : 'Entries'} · 10 Boxes/Char
-          (2 Trace · 8 Empty)
+          {sheet.entries.length} {sheet.entries.length === 1 ? 'Entry' : 'Entries'} ·{' '}
+          {sheet.boxesPerRow} Boxes/Char ({sheet.totalBoxesOnPage} Boxes)
         </span>
       </header>
 
@@ -198,52 +195,43 @@ export const WorkbookPage: React.FC<WorkbookPageProps> = ({
                 </div>
               </div>
 
-              {/* Lower Band: Independent 10-Box Practice Row for EACH Character */}
+              {/* Lower Band: Independent Full-Width Practice Row for EACH Character */}
               <div className="flex flex-col gap-1.5">
                 {entry.charResults.map((charRes, rowIdx) => (
                   <div
                     key={`${entry.id}-practice-${rowIdx}`}
-                    className="flex items-center justify-between gap-2"
+                    className="flex items-center gap-1.5"
                   >
-                    <div className="flex items-center gap-2">
-                      {/* Character marker for each independent 10-box row */}
-                      <div
-                        className="shrink-0 flex flex-col items-center justify-center text-ink-subtle"
-                        style={{ width: '24px' }}
+                    {/* Character marker for each independent practice row */}
+                    <div
+                      className="shrink-0 flex items-center justify-center text-ink-subtle"
+                      style={{ width: '20px' }}
+                    >
+                      <span
+                        className="text-sm text-ink leading-none"
+                        style={{ fontFamily: settings.fontFamily }}
                       >
-                        <span
-                          className="text-sm text-ink leading-none"
-                          style={{ fontFamily: settings.fontFamily }}
-                        >
-                          {charRes.char}
-                        </span>
-                      </div>
-
-                      {/* Exactly 10 Writing Practice Boxes: Boxes 1–2 Trace, Boxes 3–10 Empty */}
-                      <div className="flex items-center" style={{ gap: `${boxGapPx}px` }}>
-                        {Array.from({ length: MANDATORY_TOTAL_BOXES }).map((_, boxIdx) => (
-                          <WritingGridBox
-                            key={`box-${boxIdx}`}
-                            char={charRes.char}
-                            boxIndex={boxIdx + 1}
-                            isTrace={boxIdx < MANDATORY_TRACE_BOXES}
-                            boxSizePx={boxSizePx}
-                            gridStyle={settings.gridStyle}
-                            gridBgColor={settings.gridBgColor}
-                            gridLineColor={settings.gridLineColor}
-                            traceGlyphColor={settings.traceGlyphColor}
-                            fontFamily={settings.fontFamily}
-                          />
-                        ))}
-                      </div>
+                        {charRes.char}
+                      </span>
                     </div>
 
-                    {!isPortrait && (
-                      <span className="text-[9.5px] text-ink-subtle font-mono whitespace-nowrap tabular-nums">
-                        1–{MANDATORY_TRACE_BOXES} Trace · {MANDATORY_TRACE_BOXES + 1}–
-                        {MANDATORY_TOTAL_BOXES} Write
-                      </span>
-                    )}
+                    {/* Full-width equal square writing practice boxes */}
+                    <div className="flex items-center" style={{ gap: `${boxGapPx}px` }}>
+                      {Array.from({ length: sheet.boxesPerRow }).map((_, boxIdx) => (
+                        <WritingGridBox
+                          key={`box-${boxIdx}`}
+                          char={charRes.char}
+                          boxIndex={boxIdx + 1}
+                          isTrace={boxIdx < sheet.traceBoxes}
+                          boxSizePx={boxSizePx}
+                          gridStyle={settings.gridStyle}
+                          gridBgColor={settings.gridBgColor}
+                          gridLineColor={settings.gridLineColor}
+                          traceGlyphColor={settings.traceGlyphColor}
+                          fontFamily={settings.fontFamily}
+                        />
+                      ))}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -255,8 +243,8 @@ export const WorkbookPage: React.FC<WorkbookPageProps> = ({
       {/* Footer */}
       <footer className="flex items-center justify-between pt-1.5 border-t border-hairline text-[10.5px] text-ink-subtle">
         <span>
-          {settings.authorName || 'Hanzi Book Studio'} · Practice: Trace boxes 1–2, then write from
-          memory in boxes 3–{MANDATORY_TRACE_BOXES + MANDATORY_EMPTY_BOXES}
+          {settings.authorName || 'Hanzi Book Studio'} · Practice: Trace boxes 1–{sheet.traceBoxes},
+          then write from memory in boxes {sheet.traceBoxes + 1}–{sheet.boxesPerRow}
         </span>
         <span className="font-mono tabular-nums whitespace-nowrap">
           Page {sheet.pageNumber} of {totalPages}
@@ -274,10 +262,8 @@ export const WorkbookCoverPreview: React.FC<{
   const { widthPx, heightPx, paddingPx } = getSheetPreviewScale(settings);
   const specimen = entries.slice(0, 6).map((e) => e.text);
   const totalStrokes = entries.reduce((sum, e) => sum + e.totalStrokeCount, 0);
-  const totalCharPracticeRows = entries.reduce(
-    (sum, e) => sum + Math.max(1, e.charResults.length),
-    0
-  );
+  const sheets = paginateWorkbookEntries(entries, settings);
+  const totalPracticeBoxes = sheets.reduce((sum, s) => sum + s.totalBoxesOnPage, 0);
 
   return (
     <article
@@ -323,7 +309,7 @@ export const WorkbookCoverPreview: React.FC<{
             {entries.length} Vocabulary {entries.length === 1 ? 'Entry' : 'Entries'}
           </span>
           <span aria-hidden="true">·</span>
-          <span>{totalCharPracticeRows * MANDATORY_TOTAL_BOXES} Practice Boxes</span>
+          <span>{totalPracticeBoxes} Practice Boxes</span>
           <span aria-hidden="true">·</span>
           <span>{totalStrokes} Total Strokes</span>
           <span aria-hidden="true">·</span>
@@ -349,9 +335,11 @@ export const WorkbookIndexPreview: React.FC<{
 
   const sheets = paginateWorkbookEntries(entries, settings);
   const entryPageMap = new Map<string, number>();
+  const entryBoxesPerRowMap = new Map<string, number>();
   for (const sheet of sheets) {
     for (const e of sheet.entries) {
       entryPageMap.set(e.id, sheet.pageNumber);
+      entryBoxesPerRowMap.set(e.id, sheet.boxesPerRow);
     }
   }
 
@@ -408,7 +396,8 @@ export const WorkbookIndexPreview: React.FC<{
                 </td>
                 <td className="py-2 px-3 text-ink-muted">{entry.meaning || '—'}</td>
                 <td className="py-2 px-3 text-center font-mono text-xs tabular-nums">
-                  {Math.max(1, entry.charResults.length) * MANDATORY_TOTAL_BOXES}
+                  {Math.max(1, entry.charResults.length) *
+                    (entryBoxesPerRowMap.get(entry.id) ?? 10)}
                 </td>
                 <td className="py-2 px-3 text-center font-mono text-xs tabular-nums">
                   {entry.totalStrokeCount}

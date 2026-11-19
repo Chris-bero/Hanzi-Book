@@ -36,9 +36,6 @@ import {
   canInlineMultiCharStrokes,
   getPageDimensionsMm,
   getStrokeColumnsForWidth,
-  MANDATORY_EMPTY_BOXES,
-  MANDATORY_TOTAL_BOXES,
-  MANDATORY_TRACE_BOXES,
   PaginatedSheet,
   paginateWorkbookEntries,
   renderGridGuidelinePngBytes,
@@ -90,6 +87,7 @@ function hanziFont(settings: WorkbookSettings) {
 function buildCoverPageBlocks(
   workbook: WorkbookProject,
   entries: WorkbookEntry[],
+  sheets: PaginatedSheet[],
   settings: WorkbookSettings
 ): Array<Paragraph | Table> {
   const accent = cleanHex(settings.accentColor, '6B1D2F');
@@ -98,10 +96,12 @@ function buildCoverPageBlocks(
     .map((e) => e.text)
     .join('   ');
   const totalStrokes = entries.reduce((sum, e) => sum + e.totalStrokeCount, 0);
-  const totalPracticeBoxes = entries.reduce(
-    (sum, e) => sum + Math.max(1, e.charResults.length) * MANDATORY_TOTAL_BOXES,
-    0
-  );
+  const totalPracticeBoxes = sheets.reduce((sum, s) => sum + s.totalBoxesOnPage, 0);
+  const boxesPerCharCounts = Array.from(new Set(sheets.map((s) => s.boxesPerRow)));
+  const boxesPerCharLabel =
+    boxesPerCharCounts.length === 1
+      ? `${boxesPerCharCounts[0]}/char`
+      : `${Math.min(...boxesPerCharCounts)}–${Math.max(...boxesPerCharCounts)}/char`;
 
   return [
     new Paragraph({
@@ -168,7 +168,7 @@ function buildCoverPageBlocks(
       spacing: { before: 340, after: 120 },
       children: [
         new TextRun({
-          text: `${entries.length} Vocabulary ${entries.length === 1 ? 'Entry' : 'Entries'}   ·   ${totalPracticeBoxes} Practice Boxes (10/char)   ·   ${totalStrokes} Total Strokes`,
+          text: `${entries.length} Vocabulary ${entries.length === 1 ? 'Entry' : 'Entries'}   ·   ${totalPracticeBoxes} Practice Boxes (${boxesPerCharLabel})   ·   ${totalStrokes} Total Strokes`,
           font: 'Calibri',
           size: 21,
           color: '5E544B',
@@ -202,9 +202,11 @@ function buildIndexBlocks(
   const accent = cleanHex(settings.accentColor, '6B1D2F');
 
   const entryPageMap = new Map<string, number>();
+  const entryBoxesPerRowMap = new Map<string, number>();
   for (const sheet of sheets) {
     for (const e of sheet.entries) {
       entryPageMap.set(e.id, sheet.pageNumber);
+      entryBoxesPerRowMap.set(e.id, sheet.boxesPerRow);
     }
   }
 
@@ -246,7 +248,8 @@ function buildIndexBlocks(
   });
 
   const dataRows = entries.map((entry, idx) => {
-    const boxes = Math.max(1, entry.charResults.length) * MANDATORY_TOTAL_BOXES;
+    const boxes =
+      Math.max(1, entry.charResults.length) * (entryBoxesPerRowMap.get(entry.id) ?? 10);
     const sheetNumber = entryPageMap.get(entry.id) ?? 1;
     const cellsData = [
       String(idx + 1),
@@ -565,15 +568,13 @@ async function buildEntryBandBlocks(
     ],
   });
 
-  // LOWER BAND: Independent 10-box editable writing table for EACH character in the entry
-  // Boxes 1–2: Light-gray editable Chinese character tracing
-  // Boxes 3–10: Empty editable handwriting boxes with traditional Chinese guidelines behind text
-  const labelColTwip = mmToTwip(7.5);
-  const maxBoxTwip = Math.floor((contentWidthTwip - labelColTwip) / MANDATORY_TOTAL_BOXES);
+  // LOWER BAND: Independent full-width editable writing table for EACH character in the entry
+  const labelColTwip = mmToTwip(6.8);
+  const maxBoxTwip = Math.floor((contentWidthTwip - labelColTwip) / sheet.boxesPerRow);
   const boxSideTwip = Math.min(maxBoxTwip, mmToTwip(sheet.boxSizeMm));
-  const boxSidePx = Math.max(36, Math.round(boxSideTwip / 15));
-  const guidePx = Math.max(32, boxSidePx - 2);
-  const traceFontHalfPt = Math.max(32, Math.round(boxSidePx * 0.68 * 1.45));
+  const boxSidePx = Math.max(34, Math.round(boxSideTwip / 15));
+  const guidePx = Math.max(30, boxSidePx - 2);
+  const traceFontHalfPt = Math.max(30, Math.round(boxSidePx * 0.68 * 1.45));
 
   const blocks: Array<Paragraph | Table> = [upperTable];
 
@@ -583,7 +584,7 @@ async function buildEntryBandBlocks(
     const labelCell = new TableCell({
       width: { size: labelColTwip, type: WidthType.DXA },
       verticalAlign: VerticalAlign.CENTER,
-      margins: { top: 0, bottom: 0, left: 0, right: 40 },
+      margins: { top: 0, bottom: 0, left: 0, right: 35 },
       borders: {
         top: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
         bottom: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
@@ -597,7 +598,7 @@ async function buildEntryBandBlocks(
             new TextRun({
               text: ch,
               font: hanziFont(settings),
-              size: isCompact ? 22 : 26,
+              size: isCompact ? 21 : 25,
               color: '5E544B',
             }),
           ],
@@ -605,8 +606,8 @@ async function buildEntryBandBlocks(
       ],
     });
 
-    const boxCells: TableCell[] = Array.from({ length: MANDATORY_TOTAL_BOXES }).map((_, boxIdx) => {
-      const isTrace = boxIdx < MANDATORY_TRACE_BOXES;
+    const boxCells: TableCell[] = Array.from({ length: sheet.boxesPerRow }).map((_, boxIdx) => {
+      const isTrace = boxIdx < sheet.traceBoxes;
 
       const guidelineAnchor = new ImageRun({
         type: 'png',
@@ -653,7 +654,7 @@ async function buildEntryBandBlocks(
     });
 
     const practiceTable = new Table({
-      width: { size: labelColTwip + boxSideTwip * MANDATORY_TOTAL_BOXES, type: WidthType.DXA },
+      width: { size: labelColTwip + boxSideTwip * sheet.boxesPerRow, type: WidthType.DXA },
       layout: TableLayoutType.FIXED,
       borders: {
         top: { style: BorderStyle.SINGLE, size: 8, color: '9E8D7A' },
@@ -673,7 +674,6 @@ async function buildEntryBandBlocks(
 
     blocks.push(practiceTable);
 
-    // Compact vertical spacer between rows of a multi-character word or after the entry
     blocks.push(
       new Paragraph({
         spacing: {
@@ -681,7 +681,7 @@ async function buildEntryBandBlocks(
           after:
             rowIdx < entry.charResults.length - 1
               ? 35
-              : Math.round(sheet.entryGapMm * 14),
+              : Math.round(sheet.entryGapMm * 13),
         },
         children: [],
       })
@@ -723,7 +723,7 @@ export async function generateWorkbookDocx(
 
   if (settings.includeCoverPage) {
     onProgress?.({ current: 0, total: entries.length, message: 'Composing cover page…' });
-    bodyChildren.push(...buildCoverPageBlocks(workbook, entries, settings));
+    bodyChildren.push(...buildCoverPageBlocks(workbook, entries, sheets, settings));
   }
 
   if (settings.includeTableOfContents) {
@@ -773,6 +773,18 @@ export async function generateWorkbookDocx(
     message: 'Packaging editable Microsoft Word (.docx) workbook…',
   });
 
+  const minBoxes = sheets.length > 0 ? Math.min(...sheets.map((s) => s.boxesPerRow)) : 10;
+  const maxBoxes = sheets.length > 0 ? Math.max(...sheets.map((s) => s.boxesPerRow)) : 10;
+  const traceCount = sheets[0]?.traceBoxes ?? Math.max(1, settings.traceBoxCount || 2);
+  const headerBoxesSummary =
+    minBoxes === maxBoxes
+      ? `${minBoxes} Boxes/Char (${traceCount} Trace · ${minBoxes - traceCount} Empty)`
+      : `${minBoxes}–${maxBoxes} Boxes/Char (${traceCount} Trace)`;
+  const footerInstruction =
+    minBoxes === maxBoxes
+      ? `Trace boxes 1–${traceCount}, write from memory in boxes ${traceCount + 1}–${maxBoxes}`
+      : `Trace first ${traceCount} boxes, write from memory in remaining boxes`;
+
   const doc = new Document({
     creator: settings.authorName || 'Hanzi Book Studio',
     title: workbook.title,
@@ -809,7 +821,7 @@ export async function generateWorkbookDocx(
                 },
                 children: [
                   new TextRun({
-                    text: `${workbook.title}   ·   ${settings.pageSize} ${settings.orientation === 'landscape' ? 'Landscape' : 'Portrait'}   ·   10 Boxes/Char (${MANDATORY_TRACE_BOXES} Trace · ${MANDATORY_EMPTY_BOXES} Empty)`,
+                    text: `${workbook.title}   ·   ${settings.pageSize} ${settings.orientation === 'landscape' ? 'Landscape' : 'Portrait'}   ·   ${headerBoxesSummary}`,
                     font: 'Calibri',
                     size: 15,
                     color: '8C8176',
@@ -826,7 +838,7 @@ export async function generateWorkbookDocx(
                 alignment: AlignmentType.RIGHT,
                 children: [
                   new TextRun({
-                    text: `${settings.authorName || 'Hanzi Book Studio'}  ·  Trace boxes 1–2, write from memory in boxes 3–10  ·  Page `,
+                    text: `${settings.authorName || 'Hanzi Book Studio'}  ·  ${footerInstruction}  ·  Page `,
                     font: 'Calibri',
                     size: 15,
                     color: '8C8176',

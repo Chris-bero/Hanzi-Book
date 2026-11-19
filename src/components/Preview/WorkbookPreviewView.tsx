@@ -162,8 +162,9 @@ export const WorkbookPreviewView: React.FC<WorkbookPreviewViewProps> = ({
             </span>
             <span aria-hidden="true">·</span>
             <span>
-              {MANDATORY_TOTAL_BOXES} boxes/char ({MANDATORY_TRACE_BOXES} trace ·{' '}
-              {MANDATORY_EMPTY_BOXES} empty)
+              {currentSheet
+                ? `${currentSheet.boxesPerRow} boxes/char (${currentSheet.traceBoxes} trace · ${currentSheet.emptyBoxes} empty) · ${currentSheet.totalBoxesOnPage} boxes on page`
+                : `${MANDATORY_TOTAL_BOXES}+ boxes/char (${MANDATORY_TRACE_BOXES} trace · ${MANDATORY_EMPTY_BOXES}+ empty)`}
             </span>
             <span aria-hidden="true">·</span>
             <span>

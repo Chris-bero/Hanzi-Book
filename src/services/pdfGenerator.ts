@@ -10,8 +10,6 @@ import {
   canInlineMultiCharStrokes,
   getPageDimensionsMm,
   getStrokeColumnsForWidth,
-  MANDATORY_TOTAL_BOXES,
-  MANDATORY_TRACE_BOXES,
   PaginatedSheet,
   paginateWorkbookEntries,
 } from './layoutPagination';
@@ -78,6 +76,7 @@ function drawWritingBox(
 function renderCoverCanvas(
   workbook: WorkbookProject,
   entries: WorkbookEntry[],
+  sheets: PaginatedSheet[],
   widthPx: number,
   heightPx: number
 ): HTMLCanvasElement {
@@ -126,14 +125,16 @@ function renderCoverCanvas(
   }
 
   const totalStrokes = entries.reduce((sum, e) => sum + e.totalStrokeCount, 0);
-  const totalBoxes = entries.reduce(
-    (sum, e) => sum + Math.max(1, e.charResults.length) * MANDATORY_TOTAL_BOXES,
-    0
-  );
+  const totalBoxes = sheets.reduce((sum, s) => sum + s.totalBoxesOnPage, 0);
+  const uniqueBoxesPerChar = Array.from(new Set(sheets.map((s) => s.boxesPerRow)));
+  const boxesPerCharLabel =
+    uniqueBoxesPerChar.length === 1
+      ? `${uniqueBoxesPerChar[0]}/char`
+      : `${Math.min(...uniqueBoxesPerChar)}–${Math.max(...uniqueBoxesPerChar)}/char`;
   ctx.fillStyle = '#5E544B';
   ctx.font = `500 ${Math.round(widthPx * 0.0135)}px "Plus Jakarta Sans", sans-serif`;
   ctx.fillText(
-    `${entries.length} Entries  ·  ${totalBoxes} Practice Boxes (10/char)  ·  ${totalStrokes} Strokes`,
+    `${entries.length} Entries  ·  ${totalBoxes} Practice Boxes (${boxesPerCharLabel})  ·  ${totalStrokes} Strokes`,
     widthPx / 2,
     heightPx * 0.78
   );
@@ -185,7 +186,7 @@ function renderPaginatedSheetCanvas(
   ctx.font = `500 15px "JetBrains Mono", monospace`;
   ctx.textAlign = 'right';
   ctx.fillText(
-    `${settings.pageSize} ${settings.orientation.toUpperCase()} · ${sheet.entries.length} Entries · 10 Boxes/Char`,
+    `${settings.pageSize} ${settings.orientation.toUpperCase()} · ${sheet.entries.length} Entries · ${sheet.boxesPerRow} Boxes/Char (${sheet.totalBoxesOnPage} Boxes)`,
     contentX + contentW,
     headerTopY
   );
@@ -202,7 +203,7 @@ function renderPaginatedSheetCanvas(
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   ctx.fillText(
-    `${settings.authorName || 'Hanzi Book Studio'} · Practice: Trace boxes 1–2, then write from memory in boxes 3–10`,
+    `${settings.authorName || 'Hanzi Book Studio'} · Practice: Trace boxes 1–${sheet.traceBoxes}, then write from memory in boxes ${sheet.traceBoxes + 1}–${sheet.boxesPerRow}`,
     contentX,
     footerLineY + 7
   );
@@ -215,11 +216,11 @@ function renderPaginatedSheetCanvas(
   const maxBodyH = bodyBottomY - bodyTopY;
 
   const boxSizePx = Math.round(sheet.boxSizeMm * pxPerMm);
-  const boxGapPx = Math.max(6, Math.round(sheet.boxGapMm * pxPerMm));
+  const boxGapPx = Math.max(4, Math.round(sheet.boxGapMm * pxPerMm));
   const stageSizePx = Math.round(sheet.stageSizeMm * pxPerMm);
   const stageGapPx = 5;
-  const upperToPracticeGapPx = Math.round(1.8 * pxPerMm);
-  const multiRowGapPx = Math.round(1.4 * pxPerMm);
+  const upperToPracticeGapPx = Math.round(1.6 * pxPerMm);
+  const multiRowGapPx = Math.round(1.3 * pxPerMm);
   const leftW = Math.round(contentW * (isPortrait ? 0.34 : 0.27));
   const rightX = contentX + leftW + 18;
   const maxCols = getStrokeColumnsForWidth(dims.usableWidthMm, sheet.stageSizeMm, isPortrait);
@@ -364,9 +365,9 @@ function renderPaginatedSheetCanvas(
       }
     }
 
-    // Lower Independent 10-Box Practice Rows (1 row of 10 boxes per character in the entry)
+    // Lower Independent Full-Width Practice Rows (1 row of sheet.boxesPerRow boxes per character)
     let practiceY = bandTopY + metrics.upperH + upperToPracticeGapPx;
-    const labelW = 34;
+    const labelW = 30;
 
     for (const charRes of entry.charResults) {
       ctx.fillStyle = '#5E544B';
@@ -375,27 +376,15 @@ function renderPaginatedSheetCanvas(
       ctx.textBaseline = 'middle';
       ctx.fillText(charRes.char, contentX + labelW / 2 - 4, practiceY + boxSizePx / 2);
 
-      for (let b = 0; b < MANDATORY_TOTAL_BOXES; b++) {
+      for (let b = 0; b < sheet.boxesPerRow; b++) {
         drawWritingBox(
           ctx,
           contentX + labelW + b * (boxSizePx + boxGapPx),
           practiceY,
           boxSizePx,
           charRes.char,
-          b < MANDATORY_TRACE_BOXES,
+          b < sheet.traceBoxes,
           settings
-        );
-      }
-
-      if (!isPortrait) {
-        ctx.fillStyle = '#8C8176';
-        ctx.font = `500 13px "JetBrains Mono", monospace`;
-        ctx.textAlign = 'right';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(
-          `1–${MANDATORY_TRACE_BOXES} Trace · ${MANDATORY_TRACE_BOXES + 1}–${MANDATORY_TOTAL_BOXES} Write`,
-          contentX + contentW,
-          practiceY + boxSizePx / 2
         );
       }
 
@@ -448,7 +437,7 @@ export async function generateWorkbookPdf(
 
   if (settings.includeCoverPage) {
     onProgress?.({ current: 0, total: entries.length, message: 'Rendering PDF cover page…' });
-    pushCanvasPage(renderCoverCanvas(workbook, entries, canvasW, canvasH));
+    pushCanvasPage(renderCoverCanvas(workbook, entries, sheets, canvasW, canvasH));
   }
 
   let processedEntries = 0;

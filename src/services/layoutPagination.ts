@@ -1,12 +1,15 @@
 import { GridStyle, WorkbookEntry, WorkbookSettings } from '../types/workbook';
 
 /**
- * Mandatory workbook practice box specification:
- * Every individual Chinese character in every vocabulary entry MUST receive
- * an independent row of exactly 10 writing practice boxes:
- * - Boxes 1–2: Light-gray character tracing
- * - Boxes 3–10: Empty handwriting boxes with traditional Chinese guidelines
+ * Practice box baseline specification:
+ * - Minimum 10 boxes per individual Chinese character in every vocabulary entry.
+ * - Boxes 1–2: Light-gray character tracing.
+ * - Remaining boxes (3..N): Empty handwriting boxes with traditional Chinese guidelines.
+ * - In 'maximize' mode (default), every character row expands edge-to-edge across the
+ *   printable page width (e.g. 17–20 boxes/row on A4 Landscape) to maximize total
+ *   practice boxes per page with zero wasted horizontal whitespace.
  */
+export const MANDATORY_MIN_BOXES = 10;
 export const MANDATORY_TOTAL_BOXES = 10;
 export const MANDATORY_TRACE_BOXES = 2;
 export const MANDATORY_EMPTY_BOXES = 8;
@@ -25,6 +28,10 @@ export interface PaginatedSheet {
   pageNumber: number;
   entries: WorkbookEntry[];
   totalPracticeRows: number;
+  boxesPerRow: number;
+  traceBoxes: number;
+  emptyBoxes: number;
+  totalBoxesOnPage: number;
   density: PageDensity;
   boxSizeMm: number;
   boxGapMm: number;
@@ -38,8 +45,7 @@ export function getPageDimensionsMm(settings: WorkbookSettings): PageDimensionsM
   const widthMm = settings.orientation === 'landscape' ? base.h : base.w;
   const heightMm = settings.orientation === 'landscape' ? base.w : base.h;
   const margin = Math.max(8, Math.min(24, settings.pageMarginMm));
-  // Reserve 16mm total for running header, footer, and clean safety padding
-  const headerFooterReserveMm = 16;
+  const headerFooterReserveMm = 15;
 
   return {
     widthMm,
@@ -61,7 +67,7 @@ export function getStrokeColumnsForWidth(
   const infoRatio = isPortrait ? 0.34 : 0.27;
   const strokeAreaMm = usableWidthMm * (1 - infoRatio) - 8;
   const tileStepMm = stageSizeMm + 1.1;
-  return Math.max(6, Math.min(20, Math.floor(strokeAreaMm / tileStepMm)));
+  return Math.max(6, Math.min(22, Math.floor(strokeAreaMm / tileStepMm)));
 }
 
 /**
@@ -77,8 +83,31 @@ export function canInlineMultiCharStrokes(
   if (entry.charResults.length <= 1) return false;
   const maxCols = getStrokeColumnsForWidth(usableWidthMm, stageSizeMm, isPortrait);
   const totalStrokes = entry.charResults.reduce((sum, c) => sum + Math.max(1, c.strokeCount || 1), 0);
-  // Account for ~1 tile width per character label/separator
   return totalStrokes + entry.charResults.length <= maxCols;
+}
+
+function getDensityTargets(settings: WorkbookSettings, density: PageDensity) {
+  const boxPref = settings.boxDensity ?? 'standard';
+  if (boxPref === 'compact') {
+    return {
+      boxMm: density === 'spacious' ? 14.2 : 12.2,
+      stageMm: density === 'spacious' ? 10.2 : 8.2,
+      gapMm: 0.9,
+    };
+  }
+  if (boxPref === 'large') {
+    return {
+      boxMm: density === 'compact' ? 15.2 : 17.5,
+      stageMm: density === 'compact' ? 9.4 : 11.4,
+      gapMm: 1.3,
+    };
+  }
+  // 'standard' — crisp readable squares that pack 17–18 boxes across A4 Landscape
+  return {
+    boxMm: density === 'compact' ? 13.8 : density === 'balanced' ? 15.6 : 17.2,
+    stageMm: density === 'compact' ? 8.8 : density === 'balanced' ? 10.4 : 12.0,
+    gapMm: 1.0,
+  };
 }
 
 function measureEntryHeightMm(
@@ -102,47 +131,43 @@ function measureEntryHeightMm(
     }
   }
 
-  // Upper band height: at least enough for the character + pinyin + meaning, or all stroke rows
-  const minInfoHeightMm = stageSizeMm < 10 ? 9.6 : 12.2;
-  const strokesHeightMm = strokeRowsTotal * stageSizeMm + Math.max(0, strokeRowsTotal - 1) * 1.1;
+  const minInfoHeightMm = stageSizeMm < 10 ? 9.4 : 11.6;
+  const strokesHeightMm = strokeRowsTotal * stageSizeMm + Math.max(0, strokeRowsTotal - 1) * 1.0;
   const upperBandMm = Math.max(minInfoHeightMm, strokesHeightMm);
 
-  // Lower band height: 1 independent row of 10 practice boxes per character in the entry
-  const multiRowGapMm = 1.4;
-  const upperToPracticeGapMm = 1.8;
+  const multiRowGapMm = 1.3;
+  const upperToPracticeGapMm = 1.6;
   const practiceBandMm =
     upperToPracticeGapMm + charCount * boxSizeMm + Math.max(0, charCount - 1) * multiRowGapMm;
 
   return upperBandMm + practiceBandMm;
 }
 
-/**
- * Estimates minimum readable height (mm) required for a vocabulary entry so
- * auto-pagination never crowds or clips entries at the bottom of a page.
- */
 export function estimateEntryHeightMm(
   entry: WorkbookEntry,
   dims: PageDimensionsMm,
-  targetPerPage: number,
+  settings: WorkbookSettings,
   isPortrait: boolean
 ): number {
-  const compactMode = targetPerPage >= 4;
-  const minStageMm = compactMode ? 8.4 : 11.0;
-  const minBoxMm = compactMode ? 12.6 : 16.0;
-  const minDividerGapMm = compactMode ? 2.6 : 4.5;
+  const compactMode = settings.charactersPerPage >= 4 || settings.boxDensity === 'compact';
+  const targets = getDensityTargets(settings, compactMode ? 'compact' : 'balanced');
+  const minDividerGapMm = compactMode ? 2.4 : 4.2;
 
   return (
-    measureEntryHeightMm(entry, dims.usableWidthMm, minStageMm, minBoxMm, isPortrait, compactMode) +
-    minDividerGapMm
+    measureEntryHeightMm(
+      entry,
+      dims.usableWidthMm,
+      targets.stageMm,
+      targets.boxMm,
+      isPortrait,
+      compactMode
+    ) + minDividerGapMm
   );
 }
 
 /**
- * Shared auto-pagination & adaptive sizing engine used identically by the Live
- * Preview, editable Microsoft Word (.docx) generator, and PDF generator.
- *
- * Guarantees that every page's entries + 10-box practice rows fit strictly inside
- * usableHeightMm with zero bottom clipping while targeting 5 entries per A4 Landscape page.
+ * Shared auto-pagination & full-width box maximization engine used identically by
+ * Live Preview, editable Microsoft Word (.docx), and PDF exports.
  */
 export function paginateWorkbookEntries(
   entries: WorkbookEntry[],
@@ -153,14 +178,16 @@ export function paginateWorkbookEntries(
 
   const dims = getPageDimensionsMm(settings);
   const isPortrait = settings.orientation === 'portrait';
-  const maxEntriesPerPage = Math.max(1, Math.min(6, settings.charactersPerPage));
+  const maxEntriesPerPage = Math.max(1, Math.min(7, settings.charactersPerPage));
+  const fillMode = settings.boxFillMode ?? 'maximize';
+  const traceBoxes = Math.max(2, Math.min(4, settings.traceBoxCount || MANDATORY_TRACE_BOXES));
 
   const pagesRaw: WorkbookEntry[][] = [];
   let currentEntries: WorkbookEntry[] = [];
   let currentHeightMm = 0;
 
   for (const entry of validEntries) {
-    const neededMm = estimateEntryHeightMm(entry, dims, maxEntriesPerPage, isPortrait);
+    const neededMm = estimateEntryHeightMm(entry, dims, settings, isPortrait);
 
     const wouldExceedHeight =
       currentEntries.length > 0 && currentHeightMm + neededMm > dims.usableHeightMm;
@@ -194,23 +221,17 @@ export function paginateWorkbookEntries(
         : 'spacious';
 
     const inlineMultiCharStrokes = density === 'compact';
+    const targets = getDensityTargets(settings, density);
 
-    // Maximum box side that fits 10 equal squares + left character label + gaps horizontally
-    const labelReserveMm = 9.5;
-    const desiredBoxGapMm = isPortrait ? 1.4 : 2.4;
-    const maxBoxWidthMm =
-      (dims.usableWidthMm - labelReserveMm - desiredBoxGapMm * (MANDATORY_TOTAL_BOXES - 1)) /
-      MANDATORY_TOTAL_BOXES;
+    const labelReserveMm = 7.2;
+    const boxGapMm = targets.gapMm;
+    const availBoxStripMm = dims.usableWidthMm - labelReserveMm;
 
-    let stageSizeMm =
-      density === 'compact' ? 9.0 : density === 'balanced' ? 11.4 : 13.4;
-    let boxSizeMm = Math.min(
-      maxBoxWidthMm,
-      density === 'compact' ? 14.4 : density === 'balanced' ? 18.0 : 21.5
-    );
-    let entryGapMm = density === 'compact' ? 3.2 : density === 'balanced' ? 5.0 : 7.0;
+    let stageSizeMm = targets.stageMm;
+    let boxSizeMm = targets.boxMm;
+    let entryGapMm = density === 'compact' ? 2.8 : density === 'balanced' ? 4.4 : 6.4;
 
-    // Exact iterative fit check: guarantee total page height <= usableHeightMm - 4mm buffer
+    // Ensure vertical fit strictly inside usableHeightMm - 4mm safety margin
     const maxAllowedBodyMm = dims.usableHeightMm - 4;
     const computeTotalPageHeight = () =>
       pageEntries.reduce(
@@ -230,32 +251,56 @@ export function paginateWorkbookEntries(
 
     let totalHeight = computeTotalPageHeight();
     if (totalHeight > maxAllowedBodyMm) {
-      // Scale boxSizeMm, stageSizeMm, and entryGapMm proportionally so nothing ever clips
       const ratio = maxAllowedBodyMm / totalHeight;
-      boxSizeMm = Math.max(10.5, Number((boxSizeMm * ratio).toFixed(2)));
+      boxSizeMm = Math.max(10.4, Number((boxSizeMm * ratio).toFixed(2)));
       stageSizeMm = Math.max(7.2, Number((stageSizeMm * ratio).toFixed(2)));
       entryGapMm = Math.max(1.8, Number((entryGapMm * ratio).toFixed(2)));
       totalHeight = computeTotalPageHeight();
 
-      // Final safeguard pass if rounding slightly exceeded
-      while (totalHeight > maxAllowedBodyMm && boxSizeMm > 9.5) {
-        boxSizeMm = Number((boxSizeMm - 0.4).toFixed(2));
+      while (totalHeight > maxAllowedBodyMm && boxSizeMm > 9.6) {
+        boxSizeMm = Number((boxSizeMm - 0.35).toFixed(2));
         totalHeight = computeTotalPageHeight();
       }
     }
 
-    // Spread horizontal gap slightly on wide landscape pages so the 10 boxes feel balanced
-    const totalBoxesWidth =
-      labelReserveMm + boxSizeMm * MANDATORY_TOTAL_BOXES + desiredBoxGapMm * (MANDATORY_TOTAL_BOXES - 1);
-    const boxGapMm =
-      !isPortrait && totalBoxesWidth < dims.usableWidthMm - 35
-        ? Math.min(4.2, desiredBoxGapMm + 1.2)
-        : desiredBoxGapMm;
+    // Compute horizontal box count across the full printable width
+    let boxesPerRow: number;
+    if (fillMode === 'fixed10') {
+      boxesPerRow = MANDATORY_MIN_BOXES;
+      const maxBoxFor10 =
+        (availBoxStripMm - boxGapMm * (boxesPerRow - 1)) / boxesPerRow;
+      boxSizeMm = Math.min(boxSizeMm, Math.floor(maxBoxFor10 * 100) / 100);
+    } else {
+      // Maximize number of equal square boxes across 100% of available horizontal width
+      const maxFit = Math.floor((availBoxStripMm + boxGapMm) / (boxSizeMm + boxGapMm));
+      boxesPerRow = Math.max(MANDATORY_MIN_BOXES, maxFit);
+
+      // Compute exact boxSizeMm (floored to 0.01mm) so all boxesPerRow fit edge-to-edge without overflow
+      const exactFitBoxMm = (availBoxStripMm - boxGapMm * (boxesPerRow - 1)) / boxesPerRow;
+      // Keep boxSizeMm <= vertical budget while filling edge-to-edge cleanly
+      if (exactFitBoxMm < boxSizeMm) {
+        boxSizeMm = Math.floor(exactFitBoxMm * 100) / 100;
+      } else {
+        // Check if slightly larger boxSizeMm still fits vertically to fill the last 1–2mm cleanly
+        const candidateBoxMm = Math.floor(Math.min(exactFitBoxMm, boxSizeMm + 0.6) * 100) / 100;
+        const prevBox = boxSizeMm;
+        boxSizeMm = candidateBoxMm;
+        if (computeTotalPageHeight() > maxAllowedBodyMm) {
+          boxSizeMm = prevBox;
+        }
+      }
+    }
+
+    const emptyBoxes = Math.max(1, boxesPerRow - traceBoxes);
 
     return {
       pageNumber: idx + 1,
       entries: pageEntries,
       totalPracticeRows,
+      boxesPerRow,
+      traceBoxes,
+      emptyBoxes,
+      totalBoxesOnPage: totalPracticeRows * boxesPerRow,
       density,
       boxSizeMm,
       boxGapMm,
@@ -269,7 +314,7 @@ export function paginateWorkbookEntries(
 /**
  * Generates a transparent HiDPI PNG of traditional Chinese writing guidelines
  * (Mi-Zi-Ge, Tian-Zi-Ge, or Cross) to anchor behind text inside editable
- * Microsoft Word table cells so all 10 boxes stay 100% editable.
+ * Microsoft Word table cells so all boxes stay 100% editable.
  */
 export async function renderGridGuidelinePngBytes(
   gridStyle: GridStyle,
@@ -285,7 +330,6 @@ export async function renderGridGuidelinePngBytes(
     ctx.clearRect(0, 0, pixelSize, pixelSize);
     const dash = Math.max(4, Math.round(pixelSize * 0.035));
 
-    // Horizontal and vertical center lines
     ctx.save();
     ctx.strokeStyle = gridLineColor || '#C9BCA9';
     ctx.lineWidth = Math.max(1.2, pixelSize * 0.01);
@@ -299,7 +343,6 @@ export async function renderGridGuidelinePngBytes(
     ctx.lineTo(pixelSize, pixelSize / 2);
     ctx.stroke();
 
-    // Diagonal Mi-Zi-Ge lines
     if (gridStyle === 'mi') {
       ctx.globalAlpha = 0.65;
       ctx.lineWidth = Math.max(1, pixelSize * 0.008);
