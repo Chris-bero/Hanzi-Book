@@ -1,6 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import HanziWriter from 'hanzi-writer';
 import { Play, RotateCcw, X } from 'lucide-react';
+import {
+  buildCumulativeStrokeStages,
+  getScalingTransform,
+  STROKE_STAGE_PADDING_RATIO,
+} from '../../services/strokeEngine';
 import { WorkbookEntry, WorkbookSettings } from '../../types/workbook';
 import { StrokeStageGrid } from '../Stroke/StrokeStageGrid';
 
@@ -59,6 +64,7 @@ export const StrokeSequenceModal: React.FC<StrokeSequenceModalProps> = ({
 
   const handleAnimateAll = async () => {
     if (isAnimating) return;
+    setSelectedStageByChar({});
     setIsAnimating(true);
     try {
       for (const writer of writerInstances.current) {
@@ -77,12 +83,13 @@ export const StrokeSequenceModal: React.FC<StrokeSequenceModalProps> = ({
   };
 
   const handleStageSelect = (charIdx: number, stageIndex: number) => {
-    setSelectedStageByChar((prev) => ({ ...prev, [charIdx]: stageIndex }));
-    const writer = writerInstances.current[charIdx];
-    if (writer) {
-      writer.animateStroke(stageIndex);
-    }
+    setSelectedStageByChar((prev) => ({
+      ...prev,
+      [charIdx]: prev[charIdx] === stageIndex ? null : stageIndex,
+    }));
   };
+
+  const previewTransform = getScalingTransform(100, Math.round(100 * STROKE_STAGE_PADDING_RATIO));
 
   return (
     <div
@@ -162,9 +169,11 @@ export const StrokeSequenceModal: React.FC<StrokeSequenceModalProps> = ({
               <div className="flex flex-col md:flex-row gap-6 items-start">
                 <div className="shrink-0">
                   <div className="text-xs font-medium text-ink-subtle mb-2">
-                    Live Vector Player
+                    {selectedStageByChar[idx] !== null && selectedStageByChar[idx] !== undefined
+                      ? `Cumulative Step ${(selectedStageByChar[idx] ?? 0) + 1} of ${charRes.strokeCount}`
+                      : 'Live Vector Player'}
                   </div>
-                  <div className="relative w-36 h-36 border border-hairline-strong bg-paper-grid">
+                  <div className="relative w-36 h-36 border border-hairline-strong bg-white">
                     <svg
                       viewBox="0 0 100 100"
                       className="absolute inset-0 w-full h-full pointer-events-none"
@@ -178,8 +187,36 @@ export const StrokeSequenceModal: React.FC<StrokeSequenceModalProps> = ({
                       ref={(el) => {
                         writerRefs.current[idx] = el;
                       }}
-                      className="relative z-10 w-36 h-36"
+                      className={`relative z-10 w-36 h-36 ${
+                        selectedStageByChar[idx] !== null && selectedStageByChar[idx] !== undefined
+                          ? 'opacity-0 pointer-events-none'
+                          : 'opacity-100'
+                      }`}
                     />
+                    {selectedStageByChar[idx] !== null &&
+                      selectedStageByChar[idx] !== undefined &&
+                      charRes.strokeData && (
+                        <svg
+                          viewBox="0 0 100 100"
+                          className="absolute inset-0 z-20 w-36 h-36"
+                          shapeRendering="geometricPrecision"
+                        >
+                          <g transform={previewTransform.transform}>
+                            {(
+                              buildCumulativeStrokeStages(charRes.strokeData, {
+                                newStrokeColor: settings.newStrokeColor,
+                                completedStrokeColor: settings.completedStrokeColor,
+                              })[selectedStageByChar[idx]!]?.layers ?? []
+                            ).map((layer) => (
+                              <path
+                                key={`inspect-layer-${layer.strokeIndex}`}
+                                d={layer.path}
+                                fill={layer.fillColor}
+                              />
+                            ))}
+                          </g>
+                        </svg>
+                      )}
                   </div>
                   <div className="mt-2 text-[11px] text-ink-subtle font-mono tabular-nums">
                     Source: Make Me a Hanzi
@@ -193,7 +230,7 @@ export const StrokeSequenceModal: React.FC<StrokeSequenceModalProps> = ({
                       {charRes.strokeCount === 1 ? 'stroke' : 'strokes'})
                     </span>
                     <span className="text-xs text-ink-subtle">
-                      Click any stage to replay that stroke
+                      Click any step to inspect cumulative strokes
                     </span>
                   </div>
 

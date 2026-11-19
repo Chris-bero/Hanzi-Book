@@ -1,5 +1,11 @@
 import React, { useMemo } from 'react';
-import { getScalingTransform } from '../../services/strokeEngine';
+import {
+  buildCumulativeStrokeStages,
+  CUMULATIVE_COMPLETED_STROKE_COLOR,
+  CUMULATIVE_NEW_STROKE_COLOR,
+  getScalingTransform,
+  STROKE_STAGE_PADDING_RATIO,
+} from '../../services/strokeEngine';
 import { HanziCharStrokeData } from '../../types/workbook';
 
 interface StrokeStageGridProps {
@@ -16,14 +22,26 @@ interface StrokeStageGridProps {
 export const StrokeStageGrid: React.FC<StrokeStageGridProps> = ({
   strokeData,
   stageSize = 40,
-  newStrokeColor = '#C62828',
-  completedStrokeColor = '#C4BEB4',
+  newStrokeColor = CUMULATIVE_NEW_STROKE_COLOR,
+  completedStrokeColor = CUMULATIVE_COMPLETED_STROKE_COLOR,
   maxColumns,
   compact = false,
   highlightStage = null,
   onSelectStage,
 }) => {
-  const transformData = useMemo(() => getScalingTransform(100, 10), []);
+  const transformData = useMemo(
+    () => getScalingTransform(100, Math.round(100 * STROKE_STAGE_PADDING_RATIO)),
+    []
+  );
+
+  const stages = useMemo(
+    () =>
+      buildCumulativeStrokeStages(strokeData, {
+        newStrokeColor,
+        completedStrokeColor,
+      }),
+    [strokeData, newStrokeColor, completedStrokeColor]
+  );
 
   const tilePx = Math.max(26, Math.round(stageSize));
 
@@ -36,7 +54,7 @@ export const StrokeStageGrid: React.FC<StrokeStageGridProps> = ({
         alignItems: 'center',
       };
     }
-    const count = strokeData.strokeCount;
+    const count = stages.length;
     const cols = maxColumns
       ? Math.max(1, Math.min(count, maxColumns))
       : Math.min(Math.max(count, 4), 10);
@@ -45,34 +63,36 @@ export const StrokeStageGrid: React.FC<StrokeStageGridProps> = ({
       gap: '6px',
       gridTemplateColumns: `repeat(${cols}, ${tilePx}px)`,
     };
-  }, [compact, strokeData.strokeCount, maxColumns, tilePx]);
+  }, [compact, stages.length, maxColumns, tilePx]);
 
   return (
     <div style={containerStyle}>
-      {strokeData.strokes.map((_, stageIndex) => {
-        const isSelected = highlightStage === stageIndex;
+      {stages.map((stage) => {
+        const isSelected = highlightStage === stage.stageIndex;
         const interactive = Boolean(onSelectStage);
         return (
           <div
-            key={`${strokeData.char}-stage-${stageIndex}`}
+            key={`${strokeData.char}-stage-${stage.stageIndex}`}
+            data-step={stage.stepNumber}
+            data-cumulative-strokes={stage.layers.length}
             role={interactive ? 'button' : undefined}
             tabIndex={interactive ? 0 : undefined}
-            onClick={interactive ? () => onSelectStage?.(stageIndex) : undefined}
+            onClick={interactive ? () => onSelectStage?.(stage.stageIndex) : undefined}
             onKeyDown={
               interactive
                 ? (e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
-                      onSelectStage?.(stageIndex);
+                      onSelectStage?.(stage.stageIndex);
                     }
                   }
                 : undefined
             }
-            title={`Stroke ${stageIndex + 1} of ${strokeData.strokeCount}`}
+            title={`Step ${stage.stepNumber} of ${stage.totalStrokes} (cumulative strokes 1–${stage.stepNumber})`}
             style={{ width: `${tilePx}px`, height: `${tilePx}px` }}
-            className={`relative shrink-0 bg-[#FDFBF8] border flex items-center justify-center p-0.5 transition-colors ${
+            className={`relative shrink-0 bg-white border flex items-center justify-center p-0.5 transition-colors ${
               isSelected
-                ? 'border-burgundy ring-1 ring-burgundy bg-burgundy-tint/40'
+                ? 'border-burgundy ring-1 ring-burgundy bg-burgundy-tint/30'
                 : 'border-hairline'
             } ${interactive ? 'cursor-pointer hover:border-hairline-strong' : ''}`}
           >
@@ -80,12 +100,13 @@ export const StrokeStageGrid: React.FC<StrokeStageGridProps> = ({
               className="absolute top-[1px] left-[2px] font-mono font-medium text-ink-subtle leading-none tabular-nums select-none"
               style={{ fontSize: tilePx < 34 ? '7.5px' : '8.5px' }}
             >
-              {stageIndex + 1}
+              {stage.stepNumber}
             </span>
             <svg
               viewBox="0 0 100 100"
               className="w-full h-full"
-              aria-label={`${strokeData.char} stroke ${stageIndex + 1} of ${strokeData.strokeCount}`}
+              shapeRendering="geometricPrecision"
+              aria-label={`${strokeData.char} cumulative step ${stage.stepNumber} of ${stage.totalStrokes}`}
             >
               <line
                 x1="50"
@@ -106,10 +127,13 @@ export const StrokeStageGrid: React.FC<StrokeStageGridProps> = ({
                 strokeDasharray="3 3"
               />
               <g transform={transformData.transform}>
-                {strokeData.strokes.slice(0, stageIndex).map((pathD, idx) => (
-                  <path key={`prev-${idx}`} d={pathD} fill={completedStrokeColor} />
+                {stage.layers.map((layer) => (
+                  <path
+                    key={`stroke-${layer.strokeIndex}`}
+                    d={layer.path}
+                    fill={layer.fillColor}
+                  />
                 ))}
-                <path d={strokeData.strokes[stageIndex]} fill={newStrokeColor} />
               </g>
             </svg>
           </div>

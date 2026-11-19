@@ -339,9 +339,10 @@ function renderPaginatedSheetCanvas(
         if (charRes.status === 'ready' && charRes.strokeData) {
           for (let s = 0; s < charRes.strokeData.strokeCount; s++) {
             const stageCanvas = renderStrokeStageCanvas(charRes.strokeData, s, {
-              pixelSize: Math.max(120, stageSizePx * 2),
+              pixelSize: Math.max(180, stageSizePx * 3),
               newStrokeColor: settings.newStrokeColor,
               completedStrokeColor: settings.completedStrokeColor,
+              backgroundColor: '#FFFFFF',
             });
             ctx.drawImage(stageCanvas, curX, tileY, stageSizePx, stageSizePx);
             curX += stageSizePx + stageGapPx;
@@ -367,9 +368,10 @@ function renderPaginatedSheetCanvas(
             const col = s % maxCols;
             const row = Math.floor(s / maxCols);
             const stageCanvas = renderStrokeStageCanvas(charRes.strokeData, s, {
-              pixelSize: Math.max(120, stageSizePx * 2),
+              pixelSize: Math.max(180, stageSizePx * 3),
               newStrokeColor: settings.newStrokeColor,
               completedStrokeColor: settings.completedStrokeColor,
+              backgroundColor: '#FFFFFF',
             });
             ctx.drawImage(
               stageCanvas,

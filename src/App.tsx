@@ -68,6 +68,9 @@ export default function App() {
               !books[i].settings?.boxFillMode ||
               !books[i].settings?.boxDensity ||
               books[i].settings?.showArabicTranslation === undefined ||
+              books[i].settings?.newStrokeColor !== normalizedBooks[i].settings.newStrokeColor ||
+              books[i].settings?.completedStrokeColor !==
+                normalizedBooks[i].settings.completedStrokeColor ||
               arabicBackfilled
             ) {
               await repository.saveWorkbook(normalizedBooks[i]);

@@ -500,6 +500,16 @@ export const WorkbookSettingsView: React.FC<WorkbookSettingsViewProps> = ({
                 </label>
 
                 <label className="flex items-center justify-between border border-hairline px-3 py-2">
+                  <span className="text-ink-muted">Prev Strokes</span>
+                  <input
+                    type="color"
+                    value={settings.completedStrokeColor}
+                    onChange={(e) => patch({ completedStrokeColor: e.target.value })}
+                    className="w-6 h-5 border-0 bg-transparent cursor-pointer"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between border border-hairline px-3 py-2">
                   <span className="text-ink-muted">Grid Paper</span>
                   <input
                     type="color"

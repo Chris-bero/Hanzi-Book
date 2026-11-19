@@ -491,11 +491,11 @@ async function buildEntryBandBlocks(
         const strokeCount = charRes.strokeData.strokeCount;
         for (let s = 0; s < strokeCount; s++) {
           const pngBytes = await renderStrokeStagePngBytes(charRes.strokeData, s, {
-            pixelSize: Math.max(120, stagePx * 3),
+            pixelSize: Math.max(180, stagePx * 4),
             newStrokeColor: settings.newStrokeColor,
             completedStrokeColor: settings.completedStrokeColor,
             borderColor: '#DDD3C5',
-            backgroundColor: '#FDFBF8',
+            backgroundColor: '#FFFFFF',
           });
           inlineRuns.push(
             new ImageRun({
@@ -558,11 +558,11 @@ async function buildEntryBandBlocks(
 
       for (let s = 0; s < strokeCount; s++) {
         const pngBytes = await renderStrokeStagePngBytes(charRes.strokeData, s, {
-          pixelSize: Math.max(120, stagePx * 3),
+          pixelSize: Math.max(180, stagePx * 4),
           newStrokeColor: settings.newStrokeColor,
           completedStrokeColor: settings.completedStrokeColor,
           borderColor: '#DDD3C5',
-          backgroundColor: '#FDFBF8',
+          backgroundColor: '#FFFFFF',
         });
 
         stageRuns.push(

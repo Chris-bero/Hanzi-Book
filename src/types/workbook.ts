@@ -182,8 +182,8 @@ export const DEFAULT_WORKBOOK_SETTINGS: WorkbookSettings = {
   fontFamily: HANZI_FONT_MAP.kaiti.cssFamily,
   wordFontName: HANZI_FONT_MAP.kaiti.wordFontName,
   accentColor: '#6B1D2F',
-  newStrokeColor: '#C62828',
-  completedStrokeColor: '#C4BEB4',
+  newStrokeColor: '#C83232',
+  completedStrokeColor: '#C8C2B8',
   gridBgColor: '#F5EFE4',
   gridLineColor: '#C9BCA9',
   traceGlyphColor: '#CFC6B8',
@@ -218,6 +218,13 @@ export function normalizeWorkbookSettings(raw?: Partial<WorkbookSettings>): Work
 
   if (raw?.showArabicTranslation === undefined) {
     merged.showArabicTranslation = true;
+  }
+
+  if (!merged.newStrokeColor || merged.newStrokeColor.toUpperCase() === '#C62828') {
+    merged.newStrokeColor = '#C83232';
+  }
+  if (!merged.completedStrokeColor || merged.completedStrokeColor.toUpperCase() === '#C4BEB4') {
+    merged.completedStrokeColor = '#C8C2B8';
   }
 
   merged.traceBoxCount = Math.max(2, Math.min(4, merged.traceBoxCount || 2));

@@ -105,6 +105,24 @@ export async function resolveEntryStrokes(
   return { results, cacheHits, networkFetches };
 }
 
+export const CUMULATIVE_COMPLETED_STROKE_COLOR = '#C8C2B8';
+export const CUMULATIVE_NEW_STROKE_COLOR = '#C83232';
+export const STROKE_STAGE_PADDING_RATIO = 0.1;
+
+export interface CumulativeStrokeLayer {
+  strokeIndex: number;
+  path: string;
+  isNewest: boolean;
+  fillColor: string;
+}
+
+export interface CumulativeStrokeStage {
+  stepNumber: number;
+  stageIndex: number;
+  totalStrokes: number;
+  layers: CumulativeStrokeLayer[];
+}
+
 export interface StrokeStageRenderOptions {
   pixelSize?: number;
   newStrokeColor?: string;
@@ -115,8 +133,55 @@ export interface StrokeStageRenderOptions {
 }
 
 /**
+ * Canonical cumulative stroke-order builder shared by Live Preview (SVG),
+ * Stroke Sequence Inspector, editable Microsoft Word (.docx), and PDF exports.
+ *
+ * For every step N (1..totalStrokes):
+ * - Always renders ALL stroke paths from index 0 to N-1 in exact drawing order.
+ * - Previously completed strokes (0..N-2) use completedStrokeColor (#C8C2B8).
+ * - Only the newest stroke (N-1) uses newStrokeColor (#C83232).
+ * - Never renders an isolated stroke without previous strokes.
+ */
+export function buildCumulativeStrokeStages(
+  strokeData: HanziCharStrokeData,
+  options?: {
+    newStrokeColor?: string;
+    completedStrokeColor?: string;
+  }
+): CumulativeStrokeStage[] {
+  const newColor = options?.newStrokeColor?.trim() || CUMULATIVE_NEW_STROKE_COLOR;
+  const completedColor = options?.completedStrokeColor?.trim() || CUMULATIVE_COMPLETED_STROKE_COLOR;
+  const strokes = Array.isArray(strokeData.strokes) ? strokeData.strokes : [];
+  const totalStrokes = strokes.length;
+
+  return strokes.map((_, stageIndex) => {
+    const layers: CumulativeStrokeLayer[] = [];
+    for (let i = 0; i <= stageIndex; i++) {
+      const path = strokes[i];
+      if (!path) continue;
+      const isNewest = i === stageIndex;
+      layers.push({
+        strokeIndex: i,
+        path,
+        isNewest,
+        fillColor: isNewest ? newColor : completedColor,
+      });
+    }
+
+    return {
+      stepNumber: stageIndex + 1,
+      stageIndex,
+      totalStrokes,
+      layers,
+    };
+  });
+}
+
+/**
  * Renders a single cumulative stroke stage directly from real Make Me a Hanzi SVG
  * paths onto a HiDPI HTML5 Canvas and returns PNG bytes for crisp Word/PDF embedding.
+ * Uses the exact same cumulative stage builder, padding ratio, and coordinate transform
+ * as the Live Preview SVG component.
  */
 export function renderStrokeStageCanvas(
   strokeData: HanziCharStrokeData,
@@ -124,10 +189,11 @@ export function renderStrokeStageCanvas(
   options: StrokeStageRenderOptions = {}
 ): HTMLCanvasElement {
   const pixelSize = options.pixelSize ?? 180;
-  const newStrokeColor = options.newStrokeColor ?? '#C62828';
-  const completedStrokeColor = options.completedStrokeColor ?? '#C4BEB4';
+  const newStrokeColor = options.newStrokeColor?.trim() || CUMULATIVE_NEW_STROKE_COLOR;
+  const completedStrokeColor =
+    options.completedStrokeColor?.trim() || CUMULATIVE_COMPLETED_STROKE_COLOR;
   const borderColor = options.borderColor ?? '#DDD3C5';
-  const backgroundColor = options.backgroundColor ?? '#FDFBF8';
+  const backgroundColor = options.backgroundColor ?? '#FFFFFF';
   const numberColor = options.numberColor ?? '#7A7066';
 
   const canvas = document.createElement('canvas');
@@ -136,7 +202,14 @@ export function renderStrokeStageCanvas(
   const ctx = canvas.getContext('2d');
   if (!ctx) return canvas;
 
-  // Paper tile background
+  const stages = buildCumulativeStrokeStages(strokeData, {
+    newStrokeColor,
+    completedStrokeColor,
+  });
+  const clampedIdx = Math.max(0, Math.min(stageIndex, Math.max(0, stages.length - 1)));
+  const stage = stages[clampedIdx];
+
+  // Crisp tile background
   ctx.fillStyle = backgroundColor;
   ctx.fillRect(0, 0, pixelSize, pixelSize);
 
@@ -167,30 +240,24 @@ export function renderStrokeStageCanvas(
   ctx.fillStyle = numberColor;
   ctx.font = `600 ${Math.round(pixelSize * 0.13)}px "JetBrains Mono", monospace`;
   ctx.textBaseline = 'top';
-  ctx.fillText(String(stageIndex + 1), pixelSize * 0.06, pixelSize * 0.05);
+  ctx.fillText(String(clampedIdx + 1), pixelSize * 0.06, pixelSize * 0.05);
 
-  // Apply exact HanziWriter coordinate transform (1024x1024 y-flipped space).
-  // Note: HanziWriter.getScalingTransform returns y in bottom-up space; its SVG
-  // transform string is translate(x, height - y) scale(scale, -scale).
-  const pad = Math.round(pixelSize * 0.13);
+  // Apply exact HanziWriter coordinate transform (1024x1024 y-flipped space)
+  // matching StrokeStageGrid's 10% padding ratio for consistent centering and scale.
+  const pad = Math.round(pixelSize * STROKE_STAGE_PADDING_RATIO);
   const { x, y, scale } = HanziWriter.getScalingTransform(pixelSize, pixelSize, pad);
 
   ctx.save();
   ctx.translate(x, pixelSize - y);
   ctx.scale(scale, -scale);
 
-  // Completed strokes in light gray
-  ctx.fillStyle = completedStrokeColor;
-  for (let i = 0; i < stageIndex; i++) {
-    const path = new Path2D(strokeData.strokes[i]);
-    ctx.fill(path);
-  }
-
-  // Newly added stroke in red
-  if (strokeData.strokes[stageIndex]) {
-    ctx.fillStyle = newStrokeColor;
-    const activePath = new Path2D(strokeData.strokes[stageIndex]);
-    ctx.fill(activePath);
+  // Draw ALL cumulative strokes from index 0 through stageIndex in exact drawing order
+  if (stage) {
+    for (const layer of stage.layers) {
+      ctx.fillStyle = layer.fillColor;
+      const path = new Path2D(layer.path);
+      ctx.fill(path, 'nonzero');
+    }
   }
 
   ctx.restore();
