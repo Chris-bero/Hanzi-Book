@@ -33,6 +33,7 @@ import {
   WorkbookSettings,
 } from '../types/workbook';
 import {
+  canInlineMultiCharStrokes,
   getPageDimensionsMm,
   getStrokeColumnsForWidth,
   MANDATORY_EMPTY_BOXES,
@@ -384,93 +385,146 @@ async function buildEntryBandBlocks(
   ];
 
   // RIGHT CELL: Stroke-Order Diagrams directly beside vocabulary info
-  const stagePx = Math.max(26, mmToPx(sheet.stageSizeMm));
+  const stagePx = Math.max(24, mmToPx(sheet.stageSizeMm));
   const maxCols = getStrokeColumnsForWidth(usableWidthMm, sheet.stageSizeMm, isPortrait);
+  const inlineMulti =
+    sheet.inlineMultiCharStrokes &&
+    canInlineMultiCharStrokes(entry, usableWidthMm, sheet.stageSizeMm, isPortrait);
   const rightChildren: Array<Paragraph | Table> = [];
 
-  for (let cIdx = 0; cIdx < entry.charResults.length; cIdx++) {
-    const charRes = entry.charResults[cIdx];
-
-    if (charRes.status !== 'ready' || !charRes.strokeData) {
-      rightChildren.push(
-        new Paragraph({
-          spacing: { before: 10, after: 20 },
-          children: [
-            new TextRun({
-              text: `Stroke data unavailable for “${charRes.char}”.`,
-              font: 'Calibri',
-              italics: true,
-              size: 16,
-              color: 'A51D24',
-            }),
-          ],
-        })
-      );
-      continue;
-    }
-
-    const strokeCount = charRes.strokeData.strokeCount;
-    const stageRuns: Array<TextRun | ImageRun> = [];
-
-    if (isMultiChar) {
-      stageRuns.push(
+  if (inlineMulti) {
+    const inlineRuns: Array<TextRun | ImageRun> = [];
+    for (let cIdx = 0; cIdx < entry.charResults.length; cIdx++) {
+      const charRes = entry.charResults[cIdx];
+      if (cIdx > 0) {
+        inlineRuns.push(new TextRun({ text: '   ', size: 12 }));
+      }
+      inlineRuns.push(
         new TextRun({
           text: `${charRes.char} `,
           font: hanziFont(settings),
-          size: isCompact ? 20 : 24,
+          size: 19,
+          bold: true,
           color: '1E1916',
         })
       );
-    }
 
-    for (let s = 0; s < strokeCount; s++) {
-      const pngBytes = await renderStrokeStagePngBytes(charRes.strokeData, s, {
-        pixelSize: Math.max(120, stagePx * 3),
-        newStrokeColor: settings.newStrokeColor,
-        completedStrokeColor: settings.completedStrokeColor,
-        borderColor: '#DDD3C5',
-        backgroundColor: '#FDFBF8',
-      });
-
-      stageRuns.push(
-        new ImageRun({
-          type: 'png',
-          data: pngBytes,
-          transformation: {
-            width: stagePx,
-            height: stagePx,
-          },
-        })
-      );
-
-      // Tiny horizontal spacer between stroke stage tiles
-      if (s < strokeCount - 1) {
-        stageRuns.push(
-          new TextRun({
-            text: ' ',
-            size: 6,
-          })
-        );
-      }
-
-      // Wrap gracefully if character exceeds maxCols per line
-      if ((s + 1) % maxCols === 0 && s < strokeCount - 1) {
-        rightChildren.push(
-          new Paragraph({
-            spacing: { before: 10, after: 25 },
-            children: stageRuns.splice(0, stageRuns.length),
-          })
-        );
+      if (charRes.status === 'ready' && charRes.strokeData) {
+        const strokeCount = charRes.strokeData.strokeCount;
+        for (let s = 0; s < strokeCount; s++) {
+          const pngBytes = await renderStrokeStagePngBytes(charRes.strokeData, s, {
+            pixelSize: Math.max(120, stagePx * 3),
+            newStrokeColor: settings.newStrokeColor,
+            completedStrokeColor: settings.completedStrokeColor,
+            borderColor: '#DDD3C5',
+            backgroundColor: '#FDFBF8',
+          });
+          inlineRuns.push(
+            new ImageRun({
+              type: 'png',
+              data: pngBytes,
+              transformation: { width: stagePx, height: stagePx },
+            })
+          );
+          if (s < strokeCount - 1) {
+            inlineRuns.push(new TextRun({ text: ' ', size: 5 }));
+          }
+        }
       }
     }
 
-    if (stageRuns.length > 0) {
+    if (inlineRuns.length > 0) {
       rightChildren.push(
         new Paragraph({
-          spacing: { before: cIdx === 0 ? 10 : 25, after: 20 },
-          children: stageRuns,
+          spacing: { before: 10, after: 15 },
+          children: inlineRuns,
         })
       );
+    }
+  } else {
+    for (let cIdx = 0; cIdx < entry.charResults.length; cIdx++) {
+      const charRes = entry.charResults[cIdx];
+
+      if (charRes.status !== 'ready' || !charRes.strokeData) {
+        rightChildren.push(
+          new Paragraph({
+            spacing: { before: 10, after: 20 },
+            children: [
+              new TextRun({
+                text: `Stroke data unavailable for “${charRes.char}”.`,
+                font: 'Calibri',
+                italics: true,
+                size: 16,
+                color: 'A51D24',
+              }),
+            ],
+          })
+        );
+        continue;
+      }
+
+      const strokeCount = charRes.strokeData.strokeCount;
+      const stageRuns: Array<TextRun | ImageRun> = [];
+
+      if (isMultiChar) {
+        stageRuns.push(
+          new TextRun({
+            text: `${charRes.char} `,
+            font: hanziFont(settings),
+            size: isCompact ? 19 : 24,
+            bold: true,
+            color: '1E1916',
+          })
+        );
+      }
+
+      for (let s = 0; s < strokeCount; s++) {
+        const pngBytes = await renderStrokeStagePngBytes(charRes.strokeData, s, {
+          pixelSize: Math.max(120, stagePx * 3),
+          newStrokeColor: settings.newStrokeColor,
+          completedStrokeColor: settings.completedStrokeColor,
+          borderColor: '#DDD3C5',
+          backgroundColor: '#FDFBF8',
+        });
+
+        stageRuns.push(
+          new ImageRun({
+            type: 'png',
+            data: pngBytes,
+            transformation: {
+              width: stagePx,
+              height: stagePx,
+            },
+          })
+        );
+
+        if (s < strokeCount - 1) {
+          stageRuns.push(
+            new TextRun({
+              text: ' ',
+              size: 6,
+            })
+          );
+        }
+
+        if ((s + 1) % maxCols === 0 && s < strokeCount - 1) {
+          rightChildren.push(
+            new Paragraph({
+              spacing: { before: 10, after: 20 },
+              children: stageRuns.splice(0, stageRuns.length),
+            })
+          );
+        }
+      }
+
+      if (stageRuns.length > 0) {
+        rightChildren.push(
+          new Paragraph({
+            spacing: { before: cIdx === 0 ? 10 : 20, after: 15 },
+            children: stageRuns,
+          })
+        );
+      }
     }
   }
 

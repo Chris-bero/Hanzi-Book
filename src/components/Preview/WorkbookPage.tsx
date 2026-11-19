@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  canInlineMultiCharStrokes,
   getPageDimensionsMm,
   MANDATORY_EMPTY_BOXES,
   MANDATORY_TOTAL_BOXES,
@@ -41,13 +42,15 @@ export const WorkbookPage: React.FC<WorkbookPageProps> = ({
   settings,
   totalPages,
 }) => {
-  const { widthPx, heightPx, paddingPx, pxPerMm } = getSheetPreviewScale(settings);
+  const { widthPx, heightPx, paddingPx, pxPerMm, dims } = getSheetPreviewScale(settings);
   const isCompact = sheet.density === 'compact';
   const isBalanced = sheet.density === 'balanced';
+  const isPortrait = settings.orientation === 'portrait';
 
   const boxSizePx = Math.round(sheet.boxSizeMm * pxPerMm);
+  const boxGapPx = Math.max(4, Math.round(sheet.boxGapMm * pxPerMm));
   const stageSizePx = Math.round(sheet.stageSizeMm * pxPerMm);
-  const entryGapPx = Math.max(8, Math.round(sheet.entryGapMm * pxPerMm));
+  const entryGapPx = Math.max(6, Math.round(sheet.entryGapMm * pxPerMm));
 
   return (
     <article
@@ -74,20 +77,30 @@ export const WorkbookPage: React.FC<WorkbookPageProps> = ({
 
       {/* Independent Vocabulary Entry Bands */}
       <div
-        className="flex-1 flex flex-col justify-evenly py-2.5"
+        className="flex-1 flex flex-col justify-evenly py-2"
         style={{ gap: `${entryGapPx}px` }}
       >
         {sheet.entries.map((entry, idx) => {
           const isMultiChar = entry.charResults.length > 1;
+          const inlineStrokes =
+            sheet.inlineMultiCharStrokes &&
+            canInlineMultiCharStrokes(entry, dims.usableWidthMm, sheet.stageSizeMm, isPortrait);
+
           const heroSizePx = isCompact
             ? isMultiChar
-              ? 24
-              : 32
+              ? 23
+              : 30
             : isBalanced
             ? isMultiChar
-              ? 30
-              : 40
-            : Math.max(40, Math.min(72, isMultiChar ? settings.characterSizePx * 0.8 : settings.characterSizePx * 1.25));
+              ? 28
+              : 38
+            : Math.max(
+                40,
+                Math.min(
+                  72,
+                  isMultiChar ? settings.characterSizePx * 0.8 : settings.characterSizePx * 1.25
+                )
+              );
 
           const strokeLabel = isMultiChar
             ? `${entry.totalStrokeCount} strokes (${entry.charResults
@@ -99,17 +112,14 @@ export const WorkbookPage: React.FC<WorkbookPageProps> = ({
             <section
               key={entry.id}
               aria-label={`Vocabulary entry ${entry.text}`}
-              className={`flex flex-col ${
-                idx > 0 ? 'pt-2 border-t border-hairline' : ''
-              }`}
-              style={{ gap: isCompact ? '6px' : '10px' }}
+              className={`flex flex-col ${idx > 0 ? 'pt-2 border-t border-hairline' : ''}`}
+              style={{ gap: isCompact ? '5px' : '9px' }}
             >
               {/* Upper Band: Vocabulary Info (Left) + Stroke-Order Diagrams (Right) */}
               <div
-                className="grid items-center gap-4"
+                className="grid items-center gap-3.5"
                 style={{
-                  gridTemplateColumns:
-                    settings.orientation === 'portrait' ? '205px 1fr' : '255px 1fr',
+                  gridTemplateColumns: isPortrait ? '205px 1fr' : '255px 1fr',
                 }}
               >
                 {/* Left Vocabulary Info */}
@@ -129,12 +139,12 @@ export const WorkbookPage: React.FC<WorkbookPageProps> = ({
                         className="font-semibold leading-tight truncate"
                         style={{
                           color: settings.accentColor,
-                          fontSize: isCompact ? '13.5px' : '16px',
+                          fontSize: isCompact ? '13px' : '16px',
                         }}
                       >
                         {entry.pinyin || '—'}
                       </span>
-                      <span className="font-mono text-[10px] text-ink-subtle tabular-nums whitespace-nowrap">
+                      <span className="font-mono text-[9.5px] text-ink-subtle tabular-nums whitespace-nowrap">
                         {strokeLabel}
                       </span>
                     </div>
@@ -142,8 +152,8 @@ export const WorkbookPage: React.FC<WorkbookPageProps> = ({
                       className="text-ink-muted m-0 truncate"
                       title={entry.meaning}
                       style={{
-                        fontSize: isCompact ? '11px' : '12.5px',
-                        marginTop: '2px',
+                        fontSize: isCompact ? '10.5px' : '12.5px',
+                        marginTop: '1px',
                       }}
                     >
                       {entry.meaning || 'No English meaning provided.'}
@@ -152,15 +162,19 @@ export const WorkbookPage: React.FC<WorkbookPageProps> = ({
                 </div>
 
                 {/* Right Stroke Order Diagrams */}
-                <div className="min-w-0 flex flex-col gap-1">
+                <div
+                  className={`min-w-0 flex ${
+                    inlineStrokes ? 'flex-row flex-wrap items-center gap-3' : 'flex-col gap-1'
+                  }`}
+                >
                   {entry.charResults.map((charRes, cIdx) => (
                     <div
                       key={`${entry.id}-strokes-${cIdx}`}
-                      className="flex items-center gap-2 min-w-0"
+                      className="flex items-center gap-1.5 min-w-0"
                     >
                       {isMultiChar && (
                         <span
-                          className="text-sm text-ink font-normal shrink-0 w-5 text-center"
+                          className="text-xs text-ink font-semibold shrink-0"
                           style={{ fontFamily: settings.fontFamily }}
                         >
                           {charRes.char}
@@ -189,45 +203,43 @@ export const WorkbookPage: React.FC<WorkbookPageProps> = ({
                 {entry.charResults.map((charRes, rowIdx) => (
                   <div
                     key={`${entry.id}-practice-${rowIdx}`}
-                    className="flex items-center gap-2"
+                    className="flex items-center justify-between gap-2"
                   >
-                    {/* Quiet character marker (keeps multi-char rows clearly separated) */}
-                    <div
-                      className="shrink-0 flex flex-col items-center justify-center text-ink-subtle"
-                      style={{ width: '26px' }}
-                    >
-                      <span
-                        className="text-sm text-ink leading-none"
-                        style={{ fontFamily: settings.fontFamily }}
+                    <div className="flex items-center gap-2">
+                      {/* Character marker for each independent 10-box row */}
+                      <div
+                        className="shrink-0 flex flex-col items-center justify-center text-ink-subtle"
+                        style={{ width: '24px' }}
                       >
-                        {charRes.char}
-                      </span>
-                      {!isCompact && (
-                        <span className="font-mono text-[8.5px] mt-0.5 tabular-nums">10</span>
-                      )}
+                        <span
+                          className="text-sm text-ink leading-none"
+                          style={{ fontFamily: settings.fontFamily }}
+                        >
+                          {charRes.char}
+                        </span>
+                      </div>
+
+                      {/* Exactly 10 Writing Practice Boxes: Boxes 1–2 Trace, Boxes 3–10 Empty */}
+                      <div className="flex items-center" style={{ gap: `${boxGapPx}px` }}>
+                        {Array.from({ length: MANDATORY_TOTAL_BOXES }).map((_, boxIdx) => (
+                          <WritingGridBox
+                            key={`box-${boxIdx}`}
+                            char={charRes.char}
+                            boxIndex={boxIdx + 1}
+                            isTrace={boxIdx < MANDATORY_TRACE_BOXES}
+                            boxSizePx={boxSizePx}
+                            gridStyle={settings.gridStyle}
+                            gridBgColor={settings.gridBgColor}
+                            gridLineColor={settings.gridLineColor}
+                            traceGlyphColor={settings.traceGlyphColor}
+                            fontFamily={settings.fontFamily}
+                          />
+                        ))}
+                      </div>
                     </div>
 
-                    {/* Exactly 10 Writing Practice Boxes: Boxes 1–2 Trace, Boxes 3–10 Empty */}
-                    <div className="flex items-center gap-1.5">
-                      {Array.from({ length: MANDATORY_TOTAL_BOXES }).map((_, boxIdx) => (
-                        <WritingGridBox
-                          key={`box-${boxIdx}`}
-                          char={charRes.char}
-                          boxIndex={boxIdx + 1}
-                          isTrace={boxIdx < MANDATORY_TRACE_BOXES}
-                          boxSizePx={boxSizePx}
-                          gridStyle={settings.gridStyle}
-                          gridBgColor={settings.gridBgColor}
-                          gridLineColor={settings.gridLineColor}
-                          traceGlyphColor={settings.traceGlyphColor}
-                          fontFamily={settings.fontFamily}
-                        />
-                      ))}
-                    </div>
-
-                    {/* Subtle legend on right edge when space allows */}
-                    {settings.orientation === 'landscape' && !isCompact && (
-                      <span className="ml-2 text-[10px] text-ink-subtle font-mono whitespace-nowrap tabular-nums">
+                    {!isPortrait && (
+                      <span className="text-[9.5px] text-ink-subtle font-mono whitespace-nowrap tabular-nums">
                         1–{MANDATORY_TRACE_BOXES} Trace · {MANDATORY_TRACE_BOXES + 1}–
                         {MANDATORY_TOTAL_BOXES} Write
                       </span>
@@ -286,10 +298,7 @@ export const WorkbookCoverPreview: React.FC<{
         <h2 className="font-display text-5xl font-bold text-ink max-w-2xl leading-tight m-0">
           {workbook.title}
         </h2>
-        <div
-          className="w-24 h-0.5 my-6"
-          style={{ backgroundColor: settings.accentColor }}
-        />
+        <div className="w-24 h-0.5 my-6" style={{ backgroundColor: settings.accentColor }} />
         <p className="text-base text-ink-muted max-w-xl m-0">
           {workbook.subtitle || 'Guided Stroke-Order & Calligraphy Practice Sheets'}
         </p>

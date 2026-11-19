@@ -7,6 +7,7 @@ import {
   WorkbookSettings,
 } from '../types/workbook';
 import {
+  canInlineMultiCharStrokes,
   getPageDimensionsMm,
   getStrokeColumnsForWidth,
   MANDATORY_TOTAL_BOXES,
@@ -173,11 +174,12 @@ function renderPaginatedSheetCanvas(
   const isPortrait = settings.orientation === 'portrait';
 
   // Header
+  const headerTopY = Math.round(marginPx * 0.55);
   ctx.fillStyle = '#5E544B';
   ctx.font = `600 17px "Plus Jakarta Sans", sans-serif`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
-  ctx.fillText(workbook.title, contentX, marginPx * 0.55);
+  ctx.fillText(workbook.title, contentX, headerTopY);
 
   ctx.fillStyle = '#8C8176';
   ctx.font = `500 15px "JetBrains Mono", monospace`;
@@ -185,119 +187,190 @@ function renderPaginatedSheetCanvas(
   ctx.fillText(
     `${settings.pageSize} ${settings.orientation.toUpperCase()} · ${sheet.entries.length} Entries · 10 Boxes/Char`,
     contentX + contentW,
-    marginPx * 0.55
+    headerTopY
   );
 
   ctx.fillStyle = settings.accentColor;
-  ctx.fillRect(contentX, marginPx * 0.55 + 24, contentW, 2.5);
+  ctx.fillRect(contentX, headerTopY + 23, contentW, 2.5);
 
   // Footer
-  const footerY = heightPx - marginPx * 0.72;
+  const footerLineY = heightPx - marginPx - 18;
   ctx.fillStyle = '#E5DDD1';
-  ctx.fillRect(contentX, footerY - 10, contentW, 1.5);
+  ctx.fillRect(contentX, footerLineY, contentW, 1.5);
   ctx.fillStyle = '#8C8176';
-  ctx.font = `500 15px "Plus Jakarta Sans", sans-serif`;
+  ctx.font = `500 14.5px "Plus Jakarta Sans", sans-serif`;
   ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
   ctx.fillText(
-    `${settings.authorName || 'Hanzi Book Studio'} · Trace boxes 1–2, write from memory in boxes 3–10`,
+    `${settings.authorName || 'Hanzi Book Studio'} · Practice: Trace boxes 1–2, then write from memory in boxes 3–10`,
     contentX,
-    footerY
+    footerLineY + 7
   );
   ctx.textAlign = 'right';
-  ctx.fillText(`Page ${sheet.pageNumber} of ${totalPages}`, contentX + contentW, footerY);
+  ctx.fillText(`Page ${sheet.pageNumber} of ${totalPages}`, contentX + contentW, footerLineY + 7);
 
-  // Entry bands
-  let cursorY = marginPx * 0.55 + 38;
+  // Exact vertical geometry inside [bodyTopY, bodyBottomY]
+  const bodyTopY = headerTopY + 34;
+  const bodyBottomY = footerLineY - 8;
+  const maxBodyH = bodyBottomY - bodyTopY;
+
   const boxSizePx = Math.round(sheet.boxSizeMm * pxPerMm);
+  const boxGapPx = Math.max(6, Math.round(sheet.boxGapMm * pxPerMm));
   const stageSizePx = Math.round(sheet.stageSizeMm * pxPerMm);
-  const entryGapPx = Math.max(10, Math.round(sheet.entryGapMm * pxPerMm));
+  const stageGapPx = 5;
+  const upperToPracticeGapPx = Math.round(1.8 * pxPerMm);
+  const multiRowGapPx = Math.round(1.4 * pxPerMm);
   const leftW = Math.round(contentW * (isPortrait ? 0.34 : 0.27));
-  const rightX = contentX + leftW + 20;
+  const rightX = contentX + leftW + 18;
   const maxCols = getStrokeColumnsForWidth(dims.usableWidthMm, sheet.stageSizeMm, isPortrait);
+
+  // Pre-measure every entry height so we can distribute remaining vertical breathing room evenly
+  const entryHeights = sheet.entries.map((entry) => {
+    const inlineStrokes =
+      sheet.inlineMultiCharStrokes &&
+      canInlineMultiCharStrokes(entry, dims.usableWidthMm, sheet.stageSizeMm, isPortrait);
+    let strokeRows = 0;
+    if (inlineStrokes) {
+      strokeRows = 1;
+    } else {
+      for (const ch of entry.charResults) {
+        strokeRows += Math.ceil(Math.max(1, ch.strokeCount || 1) / maxCols);
+      }
+    }
+    const minInfoH = isCompact ? Math.max(46, stageSizePx + 4) : Math.max(58, stageSizePx + 6);
+    const strokeH = strokeRows * stageSizePx + Math.max(0, strokeRows - 1) * stageGapPx;
+    const upperH = Math.max(minInfoH, strokeH);
+    const practiceH =
+      entry.charResults.length * boxSizePx +
+      Math.max(0, entry.charResults.length - 1) * multiRowGapPx;
+    return { upperH, practiceH, totalH: upperH + upperToPracticeGapPx + practiceH, inlineStrokes };
+  });
+
+  const sumEntryH = entryHeights.reduce((sum, m) => sum + m.totalH, 0);
+  const gapSlots = Math.max(1, sheet.entries.length - 1);
+  const rawGap = sheet.entries.length > 1 ? Math.floor((maxBodyH - sumEntryH) / gapSlots) : 0;
+  const entryGapPx = Math.max(10, Math.min(Math.round(sheet.entryGapMm * pxPerMm * 1.6), rawGap));
+
+  // Center the vertical stack nicely within [bodyTopY, bodyBottomY]
+  const finalStackH = sumEntryH + Math.max(0, sheet.entries.length - 1) * entryGapPx;
+  let cursorY = bodyTopY + Math.max(0, Math.floor((maxBodyH - finalStackH) / 2));
 
   sheet.entries.forEach((entry, idx) => {
     const isMulti = entry.charResults.length > 1;
+    const metrics = entryHeights[idx];
 
     if (idx > 0) {
       ctx.fillStyle = '#E5DDD1';
-      ctx.fillRect(contentX, cursorY - Math.round(entryGapPx * 0.5), contentW, 1.2);
+      ctx.fillRect(contentX, cursorY - Math.round(entryGapPx / 2), contentW, 1.2);
     }
 
     const bandTopY = cursorY;
 
-    // Left Vocabulary Info
-    const heroFontPx = isCompact ? (isMulti ? 36 : 48) : isMulti ? 46 : 60;
+    // Left Vocabulary Info (vertically centered inside upperH)
+    const heroFontPx = isCompact ? (isMulti ? 32 : 42) : isMulti ? 42 : 54;
+    const infoCenterY = bandTopY + metrics.upperH / 2;
     ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
+    ctx.textBaseline = 'middle';
     ctx.fillStyle = '#1E1916';
     ctx.font = `400 ${heroFontPx}px ${settings.fontFamily}`;
-    ctx.fillText(entry.text, contentX, bandTopY + 2);
+    ctx.fillText(entry.text, contentX, infoCenterY);
 
-    const textColX = contentX + Math.min(leftW * 0.48, heroFontPx * (isMulti ? 1.9 : 1.15) + 12);
+    const measuredHeroW = ctx.measureText(entry.text).width;
+    const textColX = contentX + Math.min(leftW * 0.5, measuredHeroW + 14);
+    ctx.textBaseline = 'top';
     ctx.fillStyle = settings.accentColor;
-    ctx.font = `600 ${isCompact ? 20 : 24}px "Plus Jakarta Sans", sans-serif`;
-    ctx.fillText(entry.pinyin || '—', textColX, bandTopY + 2);
+    ctx.font = `600 ${isCompact ? 19 : 22}px "Plus Jakarta Sans", sans-serif`;
+    ctx.fillText(entry.pinyin || '—', textColX, bandTopY + Math.max(2, (metrics.upperH - 42) / 2));
 
     const strokeLabel = isMulti
       ? `${entry.totalStrokeCount} str (${entry.charResults.map((c) => c.strokeCount).join('+')})`
       : `${entry.totalStrokeCount} strokes`;
     ctx.fillStyle = '#5E544B';
-    ctx.font = `400 ${isCompact ? 15 : 17}px "Plus Jakarta Sans", sans-serif`;
+    ctx.font = `400 ${isCompact ? 14 : 16}px "Plus Jakarta Sans", sans-serif`;
+    const maxMeaningLen = isPortrait ? 20 : 32;
+    const clippedMeaning = (entry.meaning || 'No English meaning').slice(0, maxMeaningLen);
     ctx.fillText(
-      `${(entry.meaning || 'No English meaning').slice(0, 34)} · ${strokeLabel}`,
+      `${clippedMeaning} · ${strokeLabel}`,
       textColX,
-      bandTopY + (isCompact ? 28 : 34)
+      bandTopY + Math.max(2, (metrics.upperH - 42) / 2) + (isCompact ? 23 : 27)
     );
 
-    // Right Stroke-Order Diagrams beside vocabulary info
-    let strokeY = bandTopY;
-    const stageGap = 6;
-    for (const charRes of entry.charResults) {
-      let rowOffsetX = rightX;
-      if (isMulti) {
-        ctx.fillStyle = '#1E1916';
-        ctx.font = `400 22px ${settings.fontFamily}`;
-        ctx.fillText(charRes.char, rightX, strokeY + Math.round(stageSizePx * 0.2));
-        rowOffsetX += 28;
-      }
+    // Subtle vertical divider between Vocab Info and Stroke Order
+    ctx.fillStyle = '#E5DDD1';
+    ctx.fillRect(contentX + leftW + 6, bandTopY + 2, 1.2, metrics.upperH - 4);
 
-      if (charRes.status === 'ready' && charRes.strokeData) {
-        const count = charRes.strokeData.strokeCount;
-        for (let s = 0; s < count; s++) {
-          const col = s % maxCols;
-          const row = Math.floor(s / maxCols);
-          const stageCanvas = renderStrokeStageCanvas(charRes.strokeData, s, {
-            pixelSize: Math.max(110, stageSizePx * 2),
-            newStrokeColor: settings.newStrokeColor,
-            completedStrokeColor: settings.completedStrokeColor,
-          });
-          ctx.drawImage(
-            stageCanvas,
-            rowOffsetX + col * (stageSizePx + stageGap),
-            strokeY + row * (stageSizePx + stageGap),
-            stageSizePx,
-            stageSizePx
-          );
+    // Right Stroke-Order Diagrams (centered vertically inside upperH)
+    if (metrics.inlineStrokes) {
+      let curX = rightX;
+      const tileY = bandTopY + Math.round((metrics.upperH - stageSizePx) / 2);
+      for (let cIdx = 0; cIdx < entry.charResults.length; cIdx++) {
+        const charRes = entry.charResults[cIdx];
+        if (cIdx > 0) curX += 14;
+        ctx.fillStyle = '#1E1916';
+        ctx.font = `600 18px ${settings.fontFamily}`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(charRes.char, curX, tileY + stageSizePx / 2);
+        curX += 24;
+
+        if (charRes.status === 'ready' && charRes.strokeData) {
+          for (let s = 0; s < charRes.strokeData.strokeCount; s++) {
+            const stageCanvas = renderStrokeStageCanvas(charRes.strokeData, s, {
+              pixelSize: Math.max(120, stageSizePx * 2),
+              newStrokeColor: settings.newStrokeColor,
+              completedStrokeColor: settings.completedStrokeColor,
+            });
+            ctx.drawImage(stageCanvas, curX, tileY, stageSizePx, stageSizePx);
+            curX += stageSizePx + stageGapPx;
+          }
         }
-        const rowsUsed = Math.ceil(count / maxCols);
-        strokeY += rowsUsed * (stageSizePx + stageGap) + 4;
-      } else {
-        strokeY += stageSizePx + 6;
+      }
+    } else {
+      let strokeY = bandTopY;
+      for (const charRes of entry.charResults) {
+        let rowOffsetX = rightX;
+        if (isMulti) {
+          ctx.fillStyle = '#1E1916';
+          ctx.font = `600 19px ${settings.fontFamily}`;
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(charRes.char, rightX, strokeY + stageSizePx / 2);
+          rowOffsetX += 26;
+        }
+
+        if (charRes.status === 'ready' && charRes.strokeData) {
+          const count = charRes.strokeData.strokeCount;
+          for (let s = 0; s < count; s++) {
+            const col = s % maxCols;
+            const row = Math.floor(s / maxCols);
+            const stageCanvas = renderStrokeStageCanvas(charRes.strokeData, s, {
+              pixelSize: Math.max(120, stageSizePx * 2),
+              newStrokeColor: settings.newStrokeColor,
+              completedStrokeColor: settings.completedStrokeColor,
+            });
+            ctx.drawImage(
+              stageCanvas,
+              rowOffsetX + col * (stageSizePx + stageGapPx),
+              strokeY + row * (stageSizePx + stageGapPx),
+              stageSizePx,
+              stageSizePx
+            );
+          }
+          const rowsUsed = Math.ceil(count / maxCols);
+          strokeY += rowsUsed * (stageSizePx + stageGapPx);
+        } else {
+          strokeY += stageSizePx + stageGapPx;
+        }
       }
     }
 
-    const upperEndY = Math.max(bandTopY + heroFontPx + 10, strokeY + 4);
-    ctx.fillStyle = '#E5DDD1';
-    ctx.fillRect(contentX + leftW + 8, bandTopY, 1.2, upperEndY - bandTopY - 4);
-
     // Lower Independent 10-Box Practice Rows (1 row of 10 boxes per character in the entry)
-    let practiceY = upperEndY + 6;
-    const boxGap = 8;
-    const labelW = 36;
+    let practiceY = bandTopY + metrics.upperH + upperToPracticeGapPx;
+    const labelW = 34;
 
     for (const charRes of entry.charResults) {
       ctx.fillStyle = '#5E544B';
-      ctx.font = `400 24px ${settings.fontFamily}`;
+      ctx.font = `400 22px ${settings.fontFamily}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(charRes.char, contentX + labelW / 2 - 4, practiceY + boxSizePx / 2);
@@ -305,7 +378,7 @@ function renderPaginatedSheetCanvas(
       for (let b = 0; b < MANDATORY_TOTAL_BOXES; b++) {
         drawWritingBox(
           ctx,
-          contentX + labelW + b * (boxSizePx + boxGap),
+          contentX + labelW + b * (boxSizePx + boxGapPx),
           practiceY,
           boxSizePx,
           charRes.char,
@@ -313,10 +386,23 @@ function renderPaginatedSheetCanvas(
           settings
         );
       }
-      practiceY += boxSizePx + 8;
+
+      if (!isPortrait) {
+        ctx.fillStyle = '#8C8176';
+        ctx.font = `500 13px "JetBrains Mono", monospace`;
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(
+          `1–${MANDATORY_TRACE_BOXES} Trace · ${MANDATORY_TRACE_BOXES + 1}–${MANDATORY_TOTAL_BOXES} Write`,
+          contentX + contentW,
+          practiceY + boxSizePx / 2
+        );
+      }
+
+      practiceY += boxSizePx + multiRowGapPx;
     }
 
-    cursorY = practiceY + entryGapPx;
+    cursorY += metrics.totalH + entryGapPx;
   });
 
   return canvas;

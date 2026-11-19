@@ -169,12 +169,14 @@ export function renderStrokeStageCanvas(
   ctx.textBaseline = 'top';
   ctx.fillText(String(stageIndex + 1), pixelSize * 0.06, pixelSize * 0.05);
 
-  // Apply exact HanziWriter coordinate transform (1024x1024 y-flipped space)
-  const pad = Math.round(pixelSize * 0.11);
+  // Apply exact HanziWriter coordinate transform (1024x1024 y-flipped space).
+  // Note: HanziWriter.getScalingTransform returns y in bottom-up space; its SVG
+  // transform string is translate(x, height - y) scale(scale, -scale).
+  const pad = Math.round(pixelSize * 0.13);
   const { x, y, scale } = HanziWriter.getScalingTransform(pixelSize, pixelSize, pad);
 
   ctx.save();
-  ctx.translate(x, y);
+  ctx.translate(x, pixelSize - y);
   ctx.scale(scale, -scale);
 
   // Completed strokes in light gray

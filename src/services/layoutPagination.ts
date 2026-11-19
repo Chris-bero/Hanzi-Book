@@ -27,8 +27,10 @@ export interface PaginatedSheet {
   totalPracticeRows: number;
   density: PageDensity;
   boxSizeMm: number;
+  boxGapMm: number;
   stageSizeMm: number;
   entryGapMm: number;
+  inlineMultiCharStrokes: boolean;
 }
 
 export function getPageDimensionsMm(settings: WorkbookSettings): PageDimensionsMm {
@@ -36,7 +38,8 @@ export function getPageDimensionsMm(settings: WorkbookSettings): PageDimensionsM
   const widthMm = settings.orientation === 'landscape' ? base.h : base.w;
   const heightMm = settings.orientation === 'landscape' ? base.w : base.h;
   const margin = Math.max(8, Math.min(24, settings.pageMarginMm));
-  const headerFooterReserveMm = 14;
+  // Reserve 16mm total for running header, footer, and clean safety padding
+  const headerFooterReserveMm = 16;
 
   return {
     widthMm,
@@ -56,15 +59,66 @@ export function getStrokeColumnsForWidth(
   isPortrait: boolean
 ): number {
   const infoRatio = isPortrait ? 0.34 : 0.27;
-  const strokeAreaMm = usableWidthMm * (1 - infoRatio) - 6;
-  const tileStepMm = stageSizeMm + 1.2;
-  return Math.max(6, Math.min(16, Math.floor(strokeAreaMm / tileStepMm)));
+  const strokeAreaMm = usableWidthMm * (1 - infoRatio) - 8;
+  const tileStepMm = stageSizeMm + 1.1;
+  return Math.max(6, Math.min(20, Math.floor(strokeAreaMm / tileStepMm)));
 }
 
 /**
- * Estimates minimum readable height (mm) required for a single vocabulary entry
- * including its vocabulary header, stroke-order diagrams beside it, and 10-box
- * practice rows for each individual character in the entry.
+ * Determines whether a multi-character entry's stroke diagrams (e.g. 你 7 + 好 6 = 13)
+ * can sit side-by-side on a single clean horizontal line without wrapping.
+ */
+export function canInlineMultiCharStrokes(
+  entry: WorkbookEntry,
+  usableWidthMm: number,
+  stageSizeMm: number,
+  isPortrait: boolean
+): boolean {
+  if (entry.charResults.length <= 1) return false;
+  const maxCols = getStrokeColumnsForWidth(usableWidthMm, stageSizeMm, isPortrait);
+  const totalStrokes = entry.charResults.reduce((sum, c) => sum + Math.max(1, c.strokeCount || 1), 0);
+  // Account for ~1 tile width per character label/separator
+  return totalStrokes + entry.charResults.length <= maxCols;
+}
+
+function measureEntryHeightMm(
+  entry: WorkbookEntry,
+  usableWidthMm: number,
+  stageSizeMm: number,
+  boxSizeMm: number,
+  isPortrait: boolean,
+  allowInlineMulti: boolean
+): number {
+  const charCount = Math.max(1, entry.charResults.length);
+  const maxCols = getStrokeColumnsForWidth(usableWidthMm, stageSizeMm, isPortrait);
+
+  let strokeRowsTotal = 0;
+  if (allowInlineMulti && canInlineMultiCharStrokes(entry, usableWidthMm, stageSizeMm, isPortrait)) {
+    strokeRowsTotal = 1;
+  } else {
+    for (const ch of entry.charResults) {
+      const strokes = Math.max(1, ch.strokeCount || 1);
+      strokeRowsTotal += Math.ceil(strokes / maxCols);
+    }
+  }
+
+  // Upper band height: at least enough for the character + pinyin + meaning, or all stroke rows
+  const minInfoHeightMm = stageSizeMm < 10 ? 9.6 : 12.2;
+  const strokesHeightMm = strokeRowsTotal * stageSizeMm + Math.max(0, strokeRowsTotal - 1) * 1.1;
+  const upperBandMm = Math.max(minInfoHeightMm, strokesHeightMm);
+
+  // Lower band height: 1 independent row of 10 practice boxes per character in the entry
+  const multiRowGapMm = 1.4;
+  const upperToPracticeGapMm = 1.8;
+  const practiceBandMm =
+    upperToPracticeGapMm + charCount * boxSizeMm + Math.max(0, charCount - 1) * multiRowGapMm;
+
+  return upperBandMm + practiceBandMm;
+}
+
+/**
+ * Estimates minimum readable height (mm) required for a vocabulary entry so
+ * auto-pagination never crowds or clips entries at the bottom of a page.
  */
 export function estimateEntryHeightMm(
   entry: WorkbookEntry,
@@ -72,40 +126,23 @@ export function estimateEntryHeightMm(
   targetPerPage: number,
   isPortrait: boolean
 ): number {
-  const charCount = Math.max(1, entry.charResults.length);
   const compactMode = targetPerPage >= 4;
+  const minStageMm = compactMode ? 8.4 : 11.0;
+  const minBoxMm = compactMode ? 12.6 : 16.0;
+  const minDividerGapMm = compactMode ? 2.6 : 4.5;
 
-  const minStageMm = compactMode ? 8.8 : 11.8;
-  const cols = getStrokeColumnsForWidth(dims.usableWidthMm, minStageMm, isPortrait);
-
-  let strokeRowsTotal = 0;
-  for (const ch of entry.charResults) {
-    const strokes = Math.max(1, ch.strokeCount || 1);
-    strokeRowsTotal += Math.ceil(strokes / cols);
-  }
-
-  // Upper band: vocabulary info on left + stroke-order rows on right
-  const upperMinMm = compactMode
-    ? Math.max(10.2, strokeRowsTotal * (minStageMm + 1.0) + (charCount > 1 ? 1.5 : 0))
-    : Math.max(17.0, strokeRowsTotal * (minStageMm + 1.6) + (charCount > 1 ? 3.0 : 0));
-
-  // Lower band: 1 independent row of 10 practice boxes per character in the entry
-  const minBoxMm = compactMode ? 13.4 : 17.2;
-  const practiceBlockMm = charCount * minBoxMm + Math.max(0, charCount - 1) * 1.4 + 1.8;
-
-  // Vertical padding & entry divider breathing room
-  const verticalChromeMm = compactMode ? 2.4 : 5.5;
-
-  return upperMinMm + practiceBlockMm + verticalChromeMm;
+  return (
+    measureEntryHeightMm(entry, dims.usableWidthMm, minStageMm, minBoxMm, isPortrait, compactMode) +
+    minDividerGapMm
+  );
 }
 
 /**
- * Shared auto-pagination engine used identically by the Live Preview, editable
- * Microsoft Word (.docx) generator, and PDF generator.
+ * Shared auto-pagination & adaptive sizing engine used identically by the Live
+ * Preview, editable Microsoft Word (.docx) generator, and PDF generator.
  *
- * Maintains the target number of entries per page (default 5 on A4 Landscape)
- * whenever readable, and automatically wraps to the next page when multi-character
- * words or high-stroke characters require extra vertical height.
+ * Guarantees that every page's entries + 10-box practice rows fit strictly inside
+ * usableHeightMm with zero bottom clipping while targeting 5 entries per A4 Landscape page.
  */
 export function paginateWorkbookEntries(
   entries: WorkbookEntry[],
@@ -143,7 +180,6 @@ export function paginateWorkbookEntries(
     pagesRaw.push(currentEntries);
   }
 
-  // Compute adaptive spacing, box size, and stroke stage size per page
   return pagesRaw.map((pageEntries, idx) => {
     const totalPracticeRows = pageEntries.reduce(
       (sum, entry) => sum + Math.max(1, entry.charResults.length),
@@ -157,30 +193,64 @@ export function paginateWorkbookEntries(
         ? 'balanced'
         : 'spacious';
 
-    // Maximum box side that still allows 10 equal boxes + optional left character label
-    const maxBoxWidthMm = (dims.usableWidthMm - 18) / MANDATORY_TOTAL_BOXES - 1.2;
+    const inlineMultiCharStrokes = density === 'compact';
 
-    const targetBoxMm =
-      density === 'compact'
-        ? totalPracticeRows >= 6
-          ? 13.8
-          : 15.2
-        : density === 'balanced'
-        ? 18.0
-        : Math.min(24.5, settings.gridSizePx * 0.34);
+    // Maximum box side that fits 10 equal squares + left character label + gaps horizontally
+    const labelReserveMm = 9.5;
+    const desiredBoxGapMm = isPortrait ? 1.4 : 2.4;
+    const maxBoxWidthMm =
+      (dims.usableWidthMm - labelReserveMm - desiredBoxGapMm * (MANDATORY_TOTAL_BOXES - 1)) /
+      MANDATORY_TOTAL_BOXES;
 
-    const boxSizeMm = Math.max(11.5, Math.min(maxBoxWidthMm, targetBoxMm));
+    let stageSizeMm =
+      density === 'compact' ? 9.0 : density === 'balanced' ? 11.4 : 13.4;
+    let boxSizeMm = Math.min(
+      maxBoxWidthMm,
+      density === 'compact' ? 14.4 : density === 'balanced' ? 18.0 : 21.5
+    );
+    let entryGapMm = density === 'compact' ? 3.2 : density === 'balanced' ? 5.0 : 7.0;
 
-    const stageSizeMm =
-      density === 'compact'
-        ? totalPracticeRows >= 6
-          ? 9.2
-          : 10.4
-        : density === 'balanced'
-        ? 12.2
-        : Math.max(12.5, Math.min(16.5, settings.strokeStageSizePx * 0.28));
+    // Exact iterative fit check: guarantee total page height <= usableHeightMm - 4mm buffer
+    const maxAllowedBodyMm = dims.usableHeightMm - 4;
+    const computeTotalPageHeight = () =>
+      pageEntries.reduce(
+        (sum, e) =>
+          sum +
+          measureEntryHeightMm(
+            e,
+            dims.usableWidthMm,
+            stageSizeMm,
+            boxSizeMm,
+            isPortrait,
+            inlineMultiCharStrokes
+          ),
+        0
+      ) +
+      Math.max(0, pageEntries.length - 1) * entryGapMm;
 
-    const entryGapMm = density === 'compact' ? 2.4 : density === 'balanced' ? 4.5 : 7.0;
+    let totalHeight = computeTotalPageHeight();
+    if (totalHeight > maxAllowedBodyMm) {
+      // Scale boxSizeMm, stageSizeMm, and entryGapMm proportionally so nothing ever clips
+      const ratio = maxAllowedBodyMm / totalHeight;
+      boxSizeMm = Math.max(10.5, Number((boxSizeMm * ratio).toFixed(2)));
+      stageSizeMm = Math.max(7.2, Number((stageSizeMm * ratio).toFixed(2)));
+      entryGapMm = Math.max(1.8, Number((entryGapMm * ratio).toFixed(2)));
+      totalHeight = computeTotalPageHeight();
+
+      // Final safeguard pass if rounding slightly exceeded
+      while (totalHeight > maxAllowedBodyMm && boxSizeMm > 9.5) {
+        boxSizeMm = Number((boxSizeMm - 0.4).toFixed(2));
+        totalHeight = computeTotalPageHeight();
+      }
+    }
+
+    // Spread horizontal gap slightly on wide landscape pages so the 10 boxes feel balanced
+    const totalBoxesWidth =
+      labelReserveMm + boxSizeMm * MANDATORY_TOTAL_BOXES + desiredBoxGapMm * (MANDATORY_TOTAL_BOXES - 1);
+    const boxGapMm =
+      !isPortrait && totalBoxesWidth < dims.usableWidthMm - 35
+        ? Math.min(4.2, desiredBoxGapMm + 1.2)
+        : desiredBoxGapMm;
 
     return {
       pageNumber: idx + 1,
@@ -188,8 +258,10 @@ export function paginateWorkbookEntries(
       totalPracticeRows,
       density,
       boxSizeMm,
+      boxGapMm,
       stageSizeMm,
       entryGapMm,
+      inlineMultiCharStrokes,
     };
   });
 }
