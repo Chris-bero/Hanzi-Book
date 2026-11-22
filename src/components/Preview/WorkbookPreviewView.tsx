@@ -27,6 +27,7 @@ interface WorkbookPreviewViewProps {
   workbook: WorkbookProject | null;
   selectedEntryIds: Set<string>;
   onExportComplete: (record: ExportRecord) => void;
+  onToggleBwPrintMode: (enabled: boolean) => void;
   onGoToCharacters: () => void;
   onGoToSettings: () => void;
 }
@@ -37,6 +38,7 @@ export const WorkbookPreviewView: React.FC<WorkbookPreviewViewProps> = ({
   workbook,
   selectedEntryIds,
   onExportComplete,
+  onToggleBwPrintMode,
   onGoToCharacters,
   onGoToSettings,
 }) => {
@@ -101,7 +103,9 @@ export const WorkbookPreviewView: React.FC<WorkbookPreviewViewProps> = ({
       onExportComplete(record);
       setExportNotice({
         type: 'ok',
-        text: `Downloaded editable Word workbook “${record.fileName}” (${record.entryCount} entries · 10 editable boxes per character).`,
+        text: `Downloaded editable Word workbook “${record.fileName}” (${record.entryCount} entries${
+          workbook.settings.bwPrintMode ? ' · B&W Ink-Saver Mode' : ''
+        }).`,
       });
     } catch (err) {
       setExportNotice({
@@ -128,7 +132,9 @@ export const WorkbookPreviewView: React.FC<WorkbookPreviewViewProps> = ({
       onExportComplete(record);
       setExportNotice({
         type: 'ok',
-        text: `Downloaded printable PDF workbook “${record.fileName}” (${record.entryCount} entries).`,
+        text: `Downloaded printable PDF workbook “${record.fileName}” (${record.entryCount} entries${
+          workbook.settings.bwPrintMode ? ' · B&W Ink-Saver Mode' : ''
+        }).`,
       });
     } catch (err) {
       setExportNotice({
@@ -270,6 +276,28 @@ export const WorkbookPreviewView: React.FC<WorkbookPreviewViewProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-4">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={Boolean(workbook.settings.bwPrintMode)}
+            onClick={() => onToggleBwPrintMode(!workbook.settings.bwPrintMode)}
+            className="inline-flex items-center gap-2.5 px-3 py-1.5 border border-hairline-strong bg-white hover:bg-ivory text-xs font-semibold text-ink transition-colors cursor-pointer whitespace-nowrap"
+            title="Switch between color theme and pure black-and-white ink-saver print layout"
+          >
+            <span
+              className={`relative inline-flex h-4 w-7 shrink-0 items-center transition-colors ${
+                workbook.settings.bwPrintMode ? 'bg-black' : 'bg-hairline-strong'
+              }`}
+            >
+              <span
+                className={`inline-block h-3 w-3 bg-white transition-transform ${
+                  workbook.settings.bwPrintMode ? 'translate-x-3.5' : 'translate-x-0.5'
+                }`}
+              />
+            </span>
+            <span>B&amp;W Print Mode</span>
+          </button>
+
           {selectedEntryIds.size > 0 && (
             <div className="inline-flex bg-ivory p-0.5 border border-hairline">
               <button

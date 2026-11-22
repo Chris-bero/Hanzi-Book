@@ -98,7 +98,75 @@ export interface WorkbookSettings {
   includeCoverPage: boolean;
   includeTableOfContents: boolean;
   showArabicTranslation: boolean;
+  bwPrintMode?: boolean;
   authorName: string;
+}
+
+export interface EffectiveWorkbookPalette {
+  isBw: boolean;
+  pageBg: string;
+  primaryInk: string;
+  secondaryInk: string;
+  subtleInk: string;
+  accentColor: string;
+  dividerColor: string;
+  gridBgColor: string;
+  gridBorderColor: string;
+  gridLineColor: string;
+  gridDiagonalColor: string;
+  traceGlyphColor: string;
+  newStrokeColor: string;
+  completedStrokeColor: string;
+  strokeTileBorderColor: string;
+  strokeGuideLineColor: string;
+  strokeNumberColor: string;
+  indexHeaderBg: string;
+}
+
+export function resolveWorkbookPalette(settings: WorkbookSettings): EffectiveWorkbookPalette {
+  if (settings.bwPrintMode) {
+    return {
+      isBw: true,
+      pageBg: '#FFFFFF',
+      primaryInk: '#000000',
+      secondaryInk: '#000000',
+      subtleInk: '#444444',
+      accentColor: '#000000',
+      dividerColor: '#000000',
+      gridBgColor: '#FFFFFF',
+      gridBorderColor: '#000000',
+      gridLineColor: '#B0B0B0',
+      gridDiagonalColor: '#CCCCCC',
+      traceGlyphColor: '#B8B8B8',
+      newStrokeColor: '#666666',
+      completedStrokeColor: '#BDBDBD',
+      strokeTileBorderColor: '#000000',
+      strokeGuideLineColor: '#CCCCCC',
+      strokeNumberColor: '#666666',
+      indexHeaderBg: '#FFFFFF',
+    };
+  }
+
+  return {
+    isBw: false,
+    pageBg: '#FFFFFF',
+    primaryInk: '#1E1916',
+    secondaryInk: '#5E544B',
+    subtleInk: '#8C8176',
+    accentColor: settings.accentColor,
+    dividerColor: '#E5DDD1',
+    gridBgColor: settings.gridBgColor,
+    gridBorderColor: '#9E8D7A',
+    gridLineColor: settings.gridLineColor,
+    gridDiagonalColor: '#DDD2C0',
+    traceGlyphColor: settings.traceGlyphColor,
+    newStrokeColor: settings.newStrokeColor,
+    completedStrokeColor: settings.completedStrokeColor,
+    strokeTileBorderColor: '#DDD3C5',
+    strokeGuideLineColor: '#EAE2D6',
+    strokeNumberColor: '#7A7066',
+    indexHeaderBg: settings.gridBgColor,
+  };
 }
 
 export interface WorkbookProject {
@@ -190,6 +258,7 @@ export const DEFAULT_WORKBOOK_SETTINGS: WorkbookSettings = {
   includeCoverPage: true,
   includeTableOfContents: true,
   showArabicTranslation: true,
+  bwPrintMode: false,
   authorName: 'Hanzi Book Studio Press',
 };
 
@@ -219,6 +288,7 @@ export function normalizeWorkbookSettings(raw?: Partial<WorkbookSettings>): Work
   if (raw?.showArabicTranslation === undefined) {
     merged.showArabicTranslation = true;
   }
+  merged.bwPrintMode = Boolean(raw?.bwPrintMode);
 
   if (!merged.newStrokeColor || merged.newStrokeColor.toUpperCase() === '#C62828') {
     merged.newStrokeColor = '#C83232';

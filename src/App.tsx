@@ -296,6 +296,10 @@ export default function App() {
                 workbook={activeWorkbook}
                 selectedEntryIds={selectedEntryIds}
                 onExportComplete={handleExportComplete}
+                onToggleBwPrintMode={(enabled) => {
+                  if (!activeWorkbook) return;
+                  handleUpdateSettings({ ...activeWorkbook.settings, bwPrintMode: enabled });
+                }}
                 onGoToCharacters={() => setActiveTab('characters')}
                 onGoToSettings={() => setActiveTab('settings')}
               />

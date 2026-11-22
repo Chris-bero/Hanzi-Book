@@ -46,18 +46,53 @@
   font-variant-numeric: tabular-nums;
 }
 
+.bw-print-sheet {
+  background: #ffffff !important;
+  background-image: none !important;
+  color: #000000 !important;
+  border-color: #000000 !important;
+}
+
 @media print {
-  body {
-    background: #ffffff !important;
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
+
+  html,
+  body,
+  #root,
+  main {
+    background: #ffffff !important;
+    background-image: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
   .no-print {
     display: none !important;
   }
+
   .print-sheet {
+    background: #ffffff !important;
+    background-image: none !important;
     box-shadow: none !important;
     border: none !important;
     margin: 0 !important;
     page-break-after: always;
     break-after: page;
+  }
+
+  .bw-print-sheet,
+  .bw-print-sheet header,
+  .bw-print-sheet footer,
+  .bw-print-sheet section,
+  .bw-print-sheet table,
+  .bw-print-sheet th,
+  .bw-print-sheet td {
+    background: #ffffff !important;
+    background-image: none !important;
+    color: #000000 !important;
+    border-color: #000000 !important;
   }
 }

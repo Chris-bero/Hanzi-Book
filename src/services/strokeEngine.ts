@@ -129,6 +129,7 @@ export interface StrokeStageRenderOptions {
   completedStrokeColor?: string;
   borderColor?: string;
   backgroundColor?: string;
+  guideLineColor?: string;
   numberColor?: string;
 }
 
@@ -194,6 +195,7 @@ export function renderStrokeStageCanvas(
     options.completedStrokeColor?.trim() || CUMULATIVE_COMPLETED_STROKE_COLOR;
   const borderColor = options.borderColor ?? '#DDD3C5';
   const backgroundColor = options.backgroundColor ?? '#FFFFFF';
+  const guideLineColor = options.guideLineColor ?? '#EAE2D6';
   const numberColor = options.numberColor ?? '#7A7066';
 
   const canvas = document.createElement('canvas');
@@ -215,7 +217,7 @@ export function renderStrokeStageCanvas(
 
   // Subtle cross guidelines inside each stage tile
   ctx.save();
-  ctx.strokeStyle = '#EAE2D6';
+  ctx.strokeStyle = guideLineColor;
   ctx.lineWidth = Math.max(1, pixelSize * 0.008);
   ctx.setLineDash([pixelSize * 0.03, pixelSize * 0.03]);
   ctx.beginPath();

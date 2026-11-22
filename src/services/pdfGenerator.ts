@@ -2,6 +2,7 @@ import { jsPDF } from 'jspdf';
 import { repository } from '../storage/db';
 import {
   ExportRecord,
+  resolveWorkbookPalette,
   WorkbookEntry,
   WorkbookProject,
   WorkbookSettings,
@@ -30,11 +31,12 @@ function drawWritingBox(
   isTrace: boolean,
   settings: WorkbookSettings
 ) {
-  ctx.fillStyle = settings.gridBgColor;
+  const palette = resolveWorkbookPalette(settings);
+  ctx.fillStyle = palette.gridBgColor;
   ctx.fillRect(x, y, size, size);
 
   ctx.save();
-  ctx.strokeStyle = settings.gridLineColor;
+  ctx.strokeStyle = palette.gridLineColor;
   ctx.lineWidth = 1.1;
   if (settings.gridStyle !== 'cross') {
     ctx.setLineDash([4, 4]);
@@ -47,7 +49,7 @@ function drawWritingBox(
   ctx.stroke();
 
   if (settings.gridStyle === 'mi') {
-    ctx.strokeStyle = '#DDD2C0';
+    ctx.strokeStyle = palette.gridDiagonalColor;
     ctx.lineWidth = 0.85;
     ctx.beginPath();
     ctx.moveTo(x, y);
@@ -58,13 +60,13 @@ function drawWritingBox(
   }
   ctx.restore();
 
-  ctx.strokeStyle = '#9E8D7A';
+  ctx.strokeStyle = palette.gridBorderColor;
   ctx.lineWidth = 1.4;
   ctx.strokeRect(x, y, size, size);
 
   if (isTrace && char) {
     ctx.save();
-    ctx.fillStyle = settings.traceGlyphColor;
+    ctx.fillStyle = palette.traceGlyphColor;
     ctx.font = `400 ${Math.round(size * 0.7)}px ${settings.fontFamily}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -81,6 +83,7 @@ function renderCoverCanvas(
   heightPx: number
 ): HTMLCanvasElement {
   const { settings } = workbook;
+  const palette = resolveWorkbookPalette(settings);
   const canvas = document.createElement('canvas');
   canvas.width = widthPx;
   canvas.height = heightPx;
@@ -90,23 +93,23 @@ function renderCoverCanvas(
   ctx.fillRect(0, 0, widthPx, heightPx);
 
   const inset = Math.round(widthPx * 0.055);
-  ctx.strokeStyle = '#E5DDD1';
+  ctx.strokeStyle = palette.dividerColor;
   ctx.lineWidth = 2;
   ctx.strokeRect(inset, inset, widthPx - inset * 2, heightPx - inset * 2);
 
   ctx.textAlign = 'center';
-  ctx.fillStyle = settings.accentColor;
+  ctx.fillStyle = palette.accentColor;
   ctx.font = `600 ${Math.round(widthPx * 0.014)}px "Plus Jakarta Sans", sans-serif`;
   ctx.fillText('CHINESE CHARACTER WRITING WORKBOOK', widthPx / 2, heightPx * 0.25);
 
-  ctx.fillStyle = '#1E1916';
+  ctx.fillStyle = palette.primaryInk;
   ctx.font = `700 ${Math.round(widthPx * 0.045)}px "Cormorant Garamond", Georgia, serif`;
   ctx.fillText(workbook.title, widthPx / 2, heightPx * 0.35);
 
-  ctx.fillStyle = settings.accentColor;
+  ctx.fillStyle = palette.accentColor;
   ctx.fillRect(widthPx * 0.38, heightPx * 0.39, widthPx * 0.24, 4);
 
-  ctx.fillStyle = '#5E544B';
+  ctx.fillStyle = palette.secondaryInk;
   ctx.font = `400 ${Math.round(widthPx * 0.018)}px "Plus Jakarta Sans", sans-serif`;
   ctx.fillText(
     workbook.subtitle || 'Guided Stroke-Order & Handwriting Practice Sheets',
@@ -119,7 +122,7 @@ function renderCoverCanvas(
     .map((e) => e.text)
     .join('   ');
   if (specimen) {
-    ctx.fillStyle = settings.accentColor;
+    ctx.fillStyle = palette.accentColor;
     ctx.font = `400 ${Math.round(widthPx * 0.052)}px ${settings.fontFamily}`;
     ctx.fillText(specimen, widthPx / 2, heightPx * 0.62);
   }
@@ -131,7 +134,7 @@ function renderCoverCanvas(
     uniqueBoxesPerChar.length === 1
       ? `${uniqueBoxesPerChar[0]}/char`
       : `${Math.min(...uniqueBoxesPerChar)}–${Math.max(...uniqueBoxesPerChar)}/char`;
-  ctx.fillStyle = '#5E544B';
+  ctx.fillStyle = palette.secondaryInk;
   ctx.font = `500 ${Math.round(widthPx * 0.0135)}px "Plus Jakarta Sans", sans-serif`;
   ctx.fillText(
     `${entries.length} Entries  ·  ${totalBoxes} Practice Boxes (${boxesPerCharLabel})  ·  ${totalStrokes} Strokes`,
@@ -139,7 +142,7 @@ function renderCoverCanvas(
     heightPx * 0.78
   );
 
-  ctx.fillStyle = '#8C8176';
+  ctx.fillStyle = palette.subtleInk;
   ctx.font = `400 ${Math.round(widthPx * 0.012)}px "Plus Jakarta Sans", sans-serif`;
   ctx.fillText(
     `${settings.authorName || 'Hanzi Book Studio Press'}  ·  ${new Date().toLocaleDateString()}`,
@@ -159,6 +162,7 @@ function renderPaginatedSheetCanvas(
   pxPerMm: number
 ): HTMLCanvasElement {
   const { settings } = workbook;
+  const palette = resolveWorkbookPalette(settings);
   const dims = getPageDimensionsMm(settings);
   const canvas = document.createElement('canvas');
   canvas.width = widthPx;
@@ -176,13 +180,13 @@ function renderPaginatedSheetCanvas(
 
   // Header
   const headerTopY = Math.round(marginPx * 0.55);
-  ctx.fillStyle = '#5E544B';
+  ctx.fillStyle = palette.primaryInk;
   ctx.font = `600 17px "Plus Jakarta Sans", sans-serif`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   ctx.fillText(workbook.title, contentX, headerTopY);
 
-  ctx.fillStyle = '#8C8176';
+  ctx.fillStyle = palette.subtleInk;
   ctx.font = `500 15px "JetBrains Mono", monospace`;
   ctx.textAlign = 'right';
   ctx.fillText(
@@ -191,14 +195,14 @@ function renderPaginatedSheetCanvas(
     headerTopY
   );
 
-  ctx.fillStyle = settings.accentColor;
+  ctx.fillStyle = palette.accentColor;
   ctx.fillRect(contentX, headerTopY + 23, contentW, 2.5);
 
   // Footer
   const footerLineY = heightPx - marginPx - 18;
-  ctx.fillStyle = '#E5DDD1';
+  ctx.fillStyle = palette.dividerColor;
   ctx.fillRect(contentX, footerLineY, contentW, 1.5);
-  ctx.fillStyle = '#8C8176';
+  ctx.fillStyle = palette.subtleInk;
   ctx.font = `500 14.5px "Plus Jakarta Sans", sans-serif`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
@@ -265,7 +269,7 @@ function renderPaginatedSheetCanvas(
     const metrics = entryHeights[idx];
 
     if (idx > 0) {
-      ctx.fillStyle = '#E5DDD1';
+      ctx.fillStyle = palette.dividerColor;
       ctx.fillRect(contentX, cursorY - Math.round(entryGapPx / 2), contentW, 1.2);
     }
 
@@ -276,7 +280,7 @@ function renderPaginatedSheetCanvas(
     const infoCenterY = bandTopY + metrics.upperH / 2;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#1E1916';
+    ctx.fillStyle = palette.primaryInk;
     ctx.font = `400 ${heroFontPx}px ${settings.fontFamily}`;
     ctx.fillText(entry.text, contentX, infoCenterY);
 
@@ -288,14 +292,14 @@ function renderPaginatedSheetCanvas(
     const infoStartY = bandTopY + Math.max(1, (metrics.upperH - stackH) / 2);
 
     ctx.textBaseline = 'top';
-    ctx.fillStyle = settings.accentColor;
+    ctx.fillStyle = palette.accentColor;
     ctx.font = `600 ${isCompact ? 18 : 21}px "Plus Jakarta Sans", sans-serif`;
     ctx.fillText(entry.pinyin || '—', textColX, infoStartY);
 
     const strokeLabel = isMulti
       ? `${entry.totalStrokeCount} str (${entry.charResults.map((c) => c.strokeCount).join('+')})`
       : `${entry.totalStrokeCount} strokes`;
-    ctx.fillStyle = '#5E544B';
+    ctx.fillStyle = palette.secondaryInk;
     ctx.font = `400 ${isCompact ? 13 : 15}px "Plus Jakarta Sans", sans-serif`;
     const maxMeaningLen = isPortrait ? 18 : 28;
     const clippedMeaning = (entry.meaning || 'No English meaning').slice(0, maxMeaningLen);
@@ -310,7 +314,7 @@ function renderPaginatedSheetCanvas(
       ctx.direction = 'rtl';
       ctx.textAlign = 'right';
       ctx.textBaseline = 'top';
-      ctx.fillStyle = '#1E1916';
+      ctx.fillStyle = palette.primaryInk;
       ctx.font = `500 ${isCompact ? 14 : 16}px "Noto Sans Arabic", Tahoma, sans-serif`;
       const arabicRightX = contentX + leftW - 4;
       const clippedArabic = entry.arabicMeaning!.trim().slice(0, isPortrait ? 20 : 28);
@@ -319,7 +323,7 @@ function renderPaginatedSheetCanvas(
     }
 
     // Subtle vertical divider between Vocab Info and Stroke Order
-    ctx.fillStyle = '#E5DDD1';
+    ctx.fillStyle = palette.dividerColor;
     ctx.fillRect(contentX + leftW + 6, bandTopY + 2, 1.2, metrics.upperH - 4);
 
     // Right Stroke-Order Diagrams (centered vertically inside upperH)
@@ -329,7 +333,7 @@ function renderPaginatedSheetCanvas(
       for (let cIdx = 0; cIdx < entry.charResults.length; cIdx++) {
         const charRes = entry.charResults[cIdx];
         if (cIdx > 0) curX += 14;
-        ctx.fillStyle = '#1E1916';
+        ctx.fillStyle = palette.primaryInk;
         ctx.font = `600 18px ${settings.fontFamily}`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
@@ -340,8 +344,11 @@ function renderPaginatedSheetCanvas(
           for (let s = 0; s < charRes.strokeData.strokeCount; s++) {
             const stageCanvas = renderStrokeStageCanvas(charRes.strokeData, s, {
               pixelSize: Math.max(180, stageSizePx * 3),
-              newStrokeColor: settings.newStrokeColor,
-              completedStrokeColor: settings.completedStrokeColor,
+              newStrokeColor: palette.newStrokeColor,
+              completedStrokeColor: palette.completedStrokeColor,
+              borderColor: palette.strokeTileBorderColor,
+              guideLineColor: palette.strokeGuideLineColor,
+              numberColor: palette.strokeNumberColor,
               backgroundColor: '#FFFFFF',
             });
             ctx.drawImage(stageCanvas, curX, tileY, stageSizePx, stageSizePx);
@@ -354,7 +361,7 @@ function renderPaginatedSheetCanvas(
       for (const charRes of entry.charResults) {
         let rowOffsetX = rightX;
         if (isMulti) {
-          ctx.fillStyle = '#1E1916';
+          ctx.fillStyle = palette.primaryInk;
           ctx.font = `600 19px ${settings.fontFamily}`;
           ctx.textAlign = 'left';
           ctx.textBaseline = 'middle';
@@ -369,8 +376,11 @@ function renderPaginatedSheetCanvas(
             const row = Math.floor(s / maxCols);
             const stageCanvas = renderStrokeStageCanvas(charRes.strokeData, s, {
               pixelSize: Math.max(180, stageSizePx * 3),
-              newStrokeColor: settings.newStrokeColor,
-              completedStrokeColor: settings.completedStrokeColor,
+              newStrokeColor: palette.newStrokeColor,
+              completedStrokeColor: palette.completedStrokeColor,
+              borderColor: palette.strokeTileBorderColor,
+              guideLineColor: palette.strokeGuideLineColor,
+              numberColor: palette.strokeNumberColor,
               backgroundColor: '#FFFFFF',
             });
             ctx.drawImage(
@@ -394,7 +404,7 @@ function renderPaginatedSheetCanvas(
     const labelW = 30;
 
     for (const charRes of entry.charResults) {
-      ctx.fillStyle = '#5E544B';
+      ctx.fillStyle = palette.isBw ? '#000000' : '#5E544B';
       ctx.font = `400 22px ${settings.fontFamily}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -502,7 +512,9 @@ export async function generateWorkbookPdf(
       .toLowerCase()
       .replace(/[^a-z0-9\u4e00-\u9fff]+/gi, '-')
       .replace(/^-|-$/g, '') || 'hanzi-workbook';
-  const fileName = `${safeSlug}-${settings.pageSize.toLowerCase()}-${settings.orientation}.pdf`;
+  const fileName = `${safeSlug}-${settings.pageSize.toLowerCase()}-${settings.orientation}${
+    settings.bwPrintMode ? '-bw' : ''
+  }.pdf`;
   pdf.save(fileName);
 
   const record: ExportRecord = {

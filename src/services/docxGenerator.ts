@@ -28,6 +28,7 @@ import { saveAs } from 'file-saver';
 import { repository } from '../storage/db';
 import {
   ExportRecord,
+  resolveWorkbookPalette,
   WorkbookEntry,
   WorkbookProject,
   WorkbookSettings,
@@ -99,7 +100,12 @@ function buildCoverPageBlocks(
   sheets: PaginatedSheet[],
   settings: WorkbookSettings
 ): Array<Paragraph | Table> {
-  const accent = cleanHex(settings.accentColor, '6B1D2F');
+  const palette = resolveWorkbookPalette(settings);
+  const accent = cleanHex(palette.accentColor, '6B1D2F');
+  const primaryInk = cleanHex(palette.primaryInk, '1E1916');
+  const secondaryInk = cleanHex(palette.secondaryInk, '5E544B');
+  const subtleInk = cleanHex(palette.subtleInk, '8C8176');
+  const ruleHex = palette.isBw ? '000000' : 'CFC4B3';
   const specimenChars = entries
     .slice(0, 6)
     .map((e) => e.text)
@@ -131,7 +137,7 @@ function buildCoverPageBlocks(
       spacing: { before: 120, after: 220 },
       border: {
         top: { style: BorderStyle.SINGLE, size: 12, color: accent, space: 12 },
-        bottom: { style: BorderStyle.SINGLE, size: 6, color: 'CFC4B3', space: 12 },
+        bottom: { style: BorderStyle.SINGLE, size: 6, color: ruleHex, space: 12 },
       },
       children: [
         new TextRun({
@@ -139,7 +145,7 @@ function buildCoverPageBlocks(
           font: 'Georgia',
           size: 62,
           bold: true,
-          color: '1E1916',
+          color: primaryInk,
         }),
       ],
     }),
@@ -152,7 +158,7 @@ function buildCoverPageBlocks(
           font: 'Georgia',
           italics: true,
           size: 25,
-          color: '5E544B',
+          color: secondaryInk,
         }),
       ],
     }),
@@ -180,7 +186,7 @@ function buildCoverPageBlocks(
           text: `${entries.length} Vocabulary ${entries.length === 1 ? 'Entry' : 'Entries'}   ·   ${totalPracticeBoxes} Practice Boxes (${boxesPerCharLabel})   ·   ${totalStrokes} Total Strokes`,
           font: 'Calibri',
           size: 21,
-          color: '5E544B',
+          color: secondaryInk,
         }),
       ],
     }),
@@ -192,7 +198,7 @@ function buildCoverPageBlocks(
           text: `${settings.authorName || 'Hanzi Book Studio Press'}  ·  ${settings.pageSize} ${settings.orientation === 'landscape' ? 'Landscape' : 'Portrait'}  ·  ${new Date().toLocaleDateString()}`,
           font: 'Calibri',
           size: 19,
-          color: '8C8176',
+          color: subtleInk,
         }),
       ],
     }),
@@ -208,7 +214,10 @@ function buildIndexBlocks(
   settings: WorkbookSettings,
   contentWidthTwip: number
 ): Array<Paragraph | Table> {
-  const accent = cleanHex(settings.accentColor, '6B1D2F');
+  const palette = resolveWorkbookPalette(settings);
+  const accent = cleanHex(palette.accentColor, '6B1D2F');
+  const primaryInk = cleanHex(palette.primaryInk, '1E1916');
+  const indexHeaderFill = cleanHex(palette.indexHeaderBg, 'F5EFE4');
 
   const entryPageMap = new Map<string, number>();
   const entryBoxesPerRowMap = new Map<string, number>();
@@ -254,7 +263,7 @@ function buildIndexBlocks(
       (label, i) =>
         new TableCell({
           width: { size: colWidths[i], type: WidthType.DXA },
-          shading: { type: ShadingType.CLEAR, fill: 'F5EFE4', color: 'auto' },
+          shading: { type: ShadingType.CLEAR, fill: indexHeaderFill, color: 'auto' },
           margins: { top: 70, bottom: 70, left: 90, right: 90 },
           children: [
             new Paragraph({
@@ -332,7 +341,7 @@ function buildIndexBlocks(
                     size: i === 1 ? 24 : 18,
                     bold: i === 1 || i === 2,
                     rightToLeft: i === arabicColIdx && val !== '—',
-                    color: i === 2 ? accent : '1E1916',
+                    color: i === 2 ? accent : primaryInk,
                   }),
                 ],
               }),
@@ -354,7 +363,7 @@ function buildIndexBlocks(
           font: 'Georgia',
           size: 34,
           bold: true,
-          color: '1E1916',
+          color: primaryInk,
         }),
       ],
     }),
@@ -363,10 +372,18 @@ function buildIndexBlocks(
       layout: TableLayoutType.FIXED,
       borders: {
         top: { style: BorderStyle.SINGLE, size: 6, color: accent },
-        bottom: { style: BorderStyle.SINGLE, size: 6, color: 'CFC4B3' },
+        bottom: {
+          style: BorderStyle.SINGLE,
+          size: 6,
+          color: palette.isBw ? '000000' : 'CFC4B3',
+        },
         left: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
         right: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
-        insideHorizontal: { style: BorderStyle.SINGLE, size: 4, color: 'E5DDD1' },
+        insideHorizontal: {
+          style: BorderStyle.SINGLE,
+          size: 4,
+          color: palette.isBw ? '999999' : 'E5DDD1',
+        },
         insideVertical: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
       },
       rows: [headerRow, ...dataRows],
@@ -386,9 +403,14 @@ async function buildEntryBandBlocks(
   guidelinePngBytes: Uint8Array,
   isFirstOnPage: boolean
 ): Promise<Array<Paragraph | Table>> {
-  const accent = cleanHex(settings.accentColor, '6B1D2F');
-  const gridBg = cleanHex(settings.gridBgColor, 'F5EFE4');
-  const traceColor = cleanHex(settings.traceGlyphColor, 'CFC6B8');
+  const palette = resolveWorkbookPalette(settings);
+  const accent = cleanHex(palette.accentColor, '6B1D2F');
+  const primaryInk = cleanHex(palette.primaryInk, '1E1916');
+  const secondaryInk = cleanHex(palette.secondaryInk, '5E544B');
+  const dividerHex = cleanHex(palette.dividerColor, 'E5DDD1');
+  const gridBg = cleanHex(palette.gridBgColor, 'F5EFE4');
+  const gridBorderHex = cleanHex(palette.gridBorderColor, '9E8D7A');
+  const traceColor = cleanHex(palette.traceGlyphColor, 'CFC6B8');
   const isCompact = sheet.density === 'compact';
   const isMultiChar = entry.charResults.length > 1;
   const isPortrait = settings.orientation === 'portrait';
@@ -414,7 +436,7 @@ async function buildEntryBandBlocks(
           text: entry.text,
           font: hanziFont(settings),
           size: heroHalfPt,
-          color: '1E1916',
+          color: primaryInk,
         }),
         new TextRun({
           text: `  ${entry.pinyin || '—'}`,
@@ -432,14 +454,14 @@ async function buildEntryBandBlocks(
           text: `${entry.meaning || 'No English meaning'}  ·  `,
           font: 'Calibri',
           size: isCompact ? 15 : 18,
-          color: '5E544B',
+          color: secondaryInk,
         }),
         new TextRun({
           text: strokeBreakdown,
           font: 'Calibri',
           size: isCompact ? 14 : 17,
           bold: true,
-          color: '1E1916',
+          color: primaryInk,
         }),
       ],
     }),
@@ -454,7 +476,7 @@ async function buildEntryBandBlocks(
                 font: arabicFont(),
                 size: isCompact ? 17 : 20,
                 rightToLeft: true,
-                color: '1E1916',
+                color: primaryInk,
               }),
             ],
           }),
@@ -492,9 +514,11 @@ async function buildEntryBandBlocks(
         for (let s = 0; s < strokeCount; s++) {
           const pngBytes = await renderStrokeStagePngBytes(charRes.strokeData, s, {
             pixelSize: Math.max(180, stagePx * 4),
-            newStrokeColor: settings.newStrokeColor,
-            completedStrokeColor: settings.completedStrokeColor,
-            borderColor: '#DDD3C5',
+            newStrokeColor: palette.newStrokeColor,
+            completedStrokeColor: palette.completedStrokeColor,
+            borderColor: palette.strokeTileBorderColor,
+            guideLineColor: palette.strokeGuideLineColor,
+            numberColor: palette.strokeNumberColor,
             backgroundColor: '#FFFFFF',
           });
           inlineRuns.push(
@@ -533,7 +557,7 @@ async function buildEntryBandBlocks(
                 font: 'Calibri',
                 italics: true,
                 size: 16,
-                color: 'A51D24',
+                color: palette.isBw ? '000000' : 'A51D24',
               }),
             ],
           })
@@ -551,7 +575,7 @@ async function buildEntryBandBlocks(
             font: hanziFont(settings),
             size: isCompact ? 19 : 24,
             bold: true,
-            color: '1E1916',
+            color: primaryInk,
           })
         );
       }
@@ -559,9 +583,11 @@ async function buildEntryBandBlocks(
       for (let s = 0; s < strokeCount; s++) {
         const pngBytes = await renderStrokeStagePngBytes(charRes.strokeData, s, {
           pixelSize: Math.max(180, stagePx * 4),
-          newStrokeColor: settings.newStrokeColor,
-          completedStrokeColor: settings.completedStrokeColor,
-          borderColor: '#DDD3C5',
+          newStrokeColor: palette.newStrokeColor,
+          completedStrokeColor: palette.completedStrokeColor,
+          borderColor: palette.strokeTileBorderColor,
+          guideLineColor: palette.strokeGuideLineColor,
+          numberColor: palette.strokeNumberColor,
           backgroundColor: '#FFFFFF',
         });
 
@@ -616,12 +642,12 @@ async function buildEntryBandBlocks(
     borders: {
       top: isFirstOnPage
         ? { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' }
-        : { style: BorderStyle.SINGLE, size: 4, color: 'E5DDD1' },
+        : { style: BorderStyle.SINGLE, size: 4, color: dividerHex },
       bottom: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
       left: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
       right: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
       insideHorizontal: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
-      insideVertical: { style: BorderStyle.SINGLE, size: 4, color: 'E5DDD1' },
+      insideVertical: { style: BorderStyle.SINGLE, size: 4, color: dividerHex },
     },
     rows: [
       new TableRow({
@@ -664,7 +690,7 @@ async function buildEntryBandBlocks(
         top: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
         bottom: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
         left: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
-        right: { style: BorderStyle.SINGLE, size: 8, color: '9E8D7A' },
+        right: { style: BorderStyle.SINGLE, size: 8, color: gridBorderHex },
       },
       children: [
         new Paragraph({
@@ -674,7 +700,7 @@ async function buildEntryBandBlocks(
               text: ch,
               font: hanziFont(settings),
               size: isCompact ? 21 : 25,
-              color: '5E544B',
+              color: palette.isBw ? '000000' : '5E544B',
             }),
           ],
         }),
@@ -710,7 +736,7 @@ async function buildEntryBandBlocks(
         text: isTrace ? ch : '',
         font: hanziFont(settings),
         size: traceFontHalfPt,
-        color: isTrace ? traceColor : '1E1916',
+        color: isTrace ? traceColor : primaryInk,
       });
 
       return new TableCell({
@@ -732,12 +758,12 @@ async function buildEntryBandBlocks(
       width: { size: labelColTwip + boxSideTwip * sheet.boxesPerRow, type: WidthType.DXA },
       layout: TableLayoutType.FIXED,
       borders: {
-        top: { style: BorderStyle.SINGLE, size: 8, color: '9E8D7A' },
-        bottom: { style: BorderStyle.SINGLE, size: 8, color: '9E8D7A' },
+        top: { style: BorderStyle.SINGLE, size: 8, color: gridBorderHex },
+        bottom: { style: BorderStyle.SINGLE, size: 8, color: gridBorderHex },
         left: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
-        right: { style: BorderStyle.SINGLE, size: 8, color: '9E8D7A' },
-        insideHorizontal: { style: BorderStyle.SINGLE, size: 6, color: '9E8D7A' },
-        insideVertical: { style: BorderStyle.SINGLE, size: 6, color: '9E8D7A' },
+        right: { style: BorderStyle.SINGLE, size: 8, color: gridBorderHex },
+        insideHorizontal: { style: BorderStyle.SINGLE, size: 6, color: gridBorderHex },
+        insideVertical: { style: BorderStyle.SINGLE, size: 6, color: gridBorderHex },
       },
       rows: [
         new TableRow({
@@ -780,17 +806,20 @@ export async function generateWorkbookDocx(
   }
 
   const { settings } = workbook;
+  const palette = resolveWorkbookPalette(settings);
   const dims = getPageDimensionsMm(settings);
   const marginTwip = mmToTwip(settings.pageMarginMm);
   const pageWidthTwip = mmToTwip(dims.widthMm);
   const pageHeightTwip = mmToTwip(dims.heightMm);
   const contentWidthTwip = pageWidthTwip - marginTwip * 2;
-  const accent = cleanHex(settings.accentColor, '6B1D2F');
+  const accent = cleanHex(palette.accentColor, '6B1D2F');
+  const subtleInk = cleanHex(palette.subtleInk, '8C8176');
+  const secondaryInk = cleanHex(palette.secondaryInk, '5E544B');
 
   const sheets = paginateWorkbookEntries(entries, settings);
   const guidelinePngBytes = await renderGridGuidelinePngBytes(
     settings.gridStyle,
-    settings.gridLineColor,
+    palette.gridLineColor,
     180
   );
 
@@ -899,7 +928,7 @@ export async function generateWorkbookDocx(
                     text: `${workbook.title}   ·   ${settings.pageSize} ${settings.orientation === 'landscape' ? 'Landscape' : 'Portrait'}   ·   ${headerBoxesSummary}`,
                     font: 'Calibri',
                     size: 15,
-                    color: '8C8176',
+                    color: subtleInk,
                   }),
                 ],
               }),
@@ -916,25 +945,25 @@ export async function generateWorkbookDocx(
                     text: `${settings.authorName || 'Hanzi Book Studio'}  ·  ${footerInstruction}  ·  Page `,
                     font: 'Calibri',
                     size: 15,
-                    color: '8C8176',
+                    color: subtleInk,
                   }),
                   new TextRun({
                     children: [PageNumber.CURRENT],
                     font: 'Calibri',
                     size: 15,
-                    color: '5E544B',
+                    color: secondaryInk,
                   }),
                   new TextRun({
                     text: ' of ',
                     font: 'Calibri',
                     size: 15,
-                    color: '8C8176',
+                    color: subtleInk,
                   }),
                   new TextRun({
                     children: [PageNumber.TOTAL_PAGES],
                     font: 'Calibri',
                     size: 15,
-                    color: '5E544B',
+                    color: secondaryInk,
                   }),
                 ],
               }),
@@ -952,7 +981,9 @@ export async function generateWorkbookDocx(
       .toLowerCase()
       .replace(/[^a-z0-9\u4e00-\u9fff]+/gi, '-')
       .replace(/^-|-$/g, '') || 'hanzi-workbook';
-  const fileName = `${safeSlug}-${settings.pageSize.toLowerCase()}-${settings.orientation}.docx`;
+  const fileName = `${safeSlug}-${settings.pageSize.toLowerCase()}-${settings.orientation}${
+    palette.isBw ? '-bw' : ''
+  }.docx`;
 
   saveAs(blob, fileName);
 

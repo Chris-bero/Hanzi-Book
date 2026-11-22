@@ -8,7 +8,9 @@ interface WritingGridBoxProps {
   boxSizePx?: number;
   gridStyle: GridStyle;
   gridBgColor: string;
+  gridBorderColor?: string;
   gridLineColor: string;
+  gridDiagonalColor?: string;
   traceGlyphColor: string;
   fontFamily: string;
 }
@@ -20,7 +22,9 @@ export const WritingGridBox: React.FC<WritingGridBoxProps> = ({
   boxSizePx,
   gridStyle,
   gridBgColor,
+  gridBorderColor = '#9E8D7A',
   gridLineColor,
+  gridDiagonalColor,
   traceGlyphColor,
   fontFamily,
 }) => {
@@ -28,9 +32,10 @@ export const WritingGridBox: React.FC<WritingGridBoxProps> = ({
 
   return (
     <div
-      className="relative aspect-square border border-[#9E8D7A] overflow-hidden select-none shrink-0"
+      className="relative aspect-square border overflow-hidden select-none shrink-0"
       style={{
         backgroundColor: gridBgColor,
+        borderColor: gridBorderColor,
         width: boxSizePx ? `${boxSizePx}px` : undefined,
         height: boxSizePx ? `${boxSizePx}px` : undefined,
       }}
@@ -71,8 +76,8 @@ export const WritingGridBox: React.FC<WritingGridBoxProps> = ({
               y1="0"
               x2="100"
               y2="100"
-              stroke={gridLineColor}
-              strokeOpacity="0.65"
+              stroke={gridDiagonalColor ?? gridLineColor}
+              strokeOpacity={gridDiagonalColor ? '1' : '0.65'}
               strokeWidth="0.75"
               strokeDasharray="3 3"
             />
@@ -81,8 +86,8 @@ export const WritingGridBox: React.FC<WritingGridBoxProps> = ({
               y1="0"
               x2="0"
               y2="100"
-              stroke={gridLineColor}
-              strokeOpacity="0.65"
+              stroke={gridDiagonalColor ?? gridLineColor}
+              strokeOpacity={gridDiagonalColor ? '1' : '0.65'}
               strokeWidth="0.75"
               strokeDasharray="3 3"
             />

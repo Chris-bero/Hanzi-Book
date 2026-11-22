@@ -13,6 +13,9 @@ interface StrokeStageGridProps {
   stageSize?: number;
   newStrokeColor?: string;
   completedStrokeColor?: string;
+  tileBorderColor?: string;
+  guideLineColor?: string;
+  numberColor?: string;
   maxColumns?: number;
   compact?: boolean;
   highlightStage?: number | null;
@@ -24,6 +27,9 @@ export const StrokeStageGrid: React.FC<StrokeStageGridProps> = ({
   stageSize = 40,
   newStrokeColor = CUMULATIVE_NEW_STROKE_COLOR,
   completedStrokeColor = CUMULATIVE_COMPLETED_STROKE_COLOR,
+  tileBorderColor,
+  guideLineColor = '#EAE2D6',
+  numberColor,
   maxColumns,
   compact = false,
   highlightStage = null,
@@ -89,7 +95,11 @@ export const StrokeStageGrid: React.FC<StrokeStageGridProps> = ({
                 : undefined
             }
             title={`Step ${stage.stepNumber} of ${stage.totalStrokes} (cumulative strokes 1–${stage.stepNumber})`}
-            style={{ width: `${tilePx}px`, height: `${tilePx}px` }}
+            style={{
+              width: `${tilePx}px`,
+              height: `${tilePx}px`,
+              borderColor: !isSelected && tileBorderColor ? tileBorderColor : undefined,
+            }}
             className={`relative shrink-0 bg-white border flex items-center justify-center p-0.5 transition-colors ${
               isSelected
                 ? 'border-burgundy ring-1 ring-burgundy bg-burgundy-tint/30'
@@ -98,7 +108,10 @@ export const StrokeStageGrid: React.FC<StrokeStageGridProps> = ({
           >
             <span
               className="absolute top-[1px] left-[2px] font-mono font-medium text-ink-subtle leading-none tabular-nums select-none"
-              style={{ fontSize: tilePx < 34 ? '7.5px' : '8.5px' }}
+              style={{
+                fontSize: tilePx < 34 ? '7.5px' : '8.5px',
+                color: numberColor,
+              }}
             >
               {stage.stepNumber}
             </span>
@@ -113,7 +126,7 @@ export const StrokeStageGrid: React.FC<StrokeStageGridProps> = ({
                 y1="0"
                 x2="50"
                 y2="100"
-                stroke="#EAE2D6"
+                stroke={guideLineColor}
                 strokeWidth="0.9"
                 strokeDasharray="3 3"
               />
@@ -122,7 +135,7 @@ export const StrokeStageGrid: React.FC<StrokeStageGridProps> = ({
                 y1="50"
                 x2="100"
                 y2="50"
-                stroke="#EAE2D6"
+                stroke={guideLineColor}
                 strokeWidth="0.9"
                 strokeDasharray="3 3"
               />

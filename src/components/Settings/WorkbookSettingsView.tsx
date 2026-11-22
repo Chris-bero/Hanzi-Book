@@ -458,6 +458,34 @@ export const WorkbookSettingsView: React.FC<WorkbookSettingsViewProps> = ({
             </div>
 
             <div className="pt-2 space-y-3">
+              {/* Black & White / Ink-Saver Print Mode Switch */}
+              <div className="flex items-center justify-between gap-3 border border-hairline-strong bg-ivory/60 px-3.5 py-2.5">
+                <div>
+                  <div className="text-xs font-semibold text-ink">B&amp;W Print Mode</div>
+                  <div className="text-[11px] text-ink-subtle">
+                    Ink-saver pure white &amp; black layout with neutral gray guidelines for Preview,
+                    Print, Word &amp; PDF
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-label="B&W Print Mode"
+                  aria-checked={Boolean(settings.bwPrintMode)}
+                  onClick={() => patch({ bwPrintMode: !settings.bwPrintMode })}
+                  className={`relative inline-flex h-5 w-9 shrink-0 items-center transition-colors cursor-pointer ${
+                    settings.bwPrintMode ? 'bg-black' : 'bg-hairline-strong'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3.5 w-3.5 bg-white transition-transform ${
+                      settings.bwPrintMode ? 'translate-x-4.5' : 'translate-x-0.5'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              <div className={`space-y-3 ${settings.bwPrintMode ? 'opacity-50' : ''}`}>
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-ink-muted">Accent Presets</span>
                 <div className="flex items-center gap-2">
@@ -528,6 +556,7 @@ export const WorkbookSettingsView: React.FC<WorkbookSettingsViewProps> = ({
                     className="w-6 h-5 border-0 bg-transparent cursor-pointer"
                   />
                 </label>
+              </div>
               </div>
             </div>
           </section>
