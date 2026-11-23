@@ -6,6 +6,9 @@ import {
   paginateWorkbookEntries,
 } from '../../services/layoutPagination';
 import {
+  PRO_TYPOGRAPHY_CONTRAST_DEFAULTS,
+  resolveSheetFooterText,
+  resolveSheetHeaderTitle,
   resolveWorkbookPalette,
   WorkbookEntry,
   WorkbookProject,
@@ -47,17 +50,43 @@ export const WorkbookPage: React.FC<WorkbookPageProps> = ({
   const { widthPx, heightPx, paddingPx, pxPerMm, dims } = getSheetPreviewScale(settings);
   const palette = resolveWorkbookPalette(settings);
   const isCompact = sheet.density === 'compact';
-  const isBalanced = sheet.density === 'balanced';
   const isPortrait = settings.orientation === 'portrait';
 
-  const boxSizePx = Math.round(sheet.boxSizeMm * pxPerMm);
-  const boxGapPx = Math.max(4, Math.round(sheet.boxGapMm * pxPerMm));
+  // Exact inner printable pixel width (subtracting article 2px border + horizontal padding)
+  const innerWidthPx = widthPx - 2 - paddingPx * 2;
+  const rowLabelWidthPx = 22;
+  const rowLabelGapPx = 6;
+  const availRowBoxesPx = Math.max(120, innerWidthPx - rowLabelWidthPx - rowLabelGapPx);
+
+  // Strictly clamp boxGapPx and boxSizePx via Math.floor so rightmost boxes NEVER clip
+  const boxGapPx = Math.max(2, Math.floor(sheet.boxGapMm * pxPerMm));
+  const maxFitBoxPx = Math.floor(
+    (availRowBoxesPx - boxGapPx * Math.max(0, sheet.boxesPerRow - 1)) /
+      Math.max(1, sheet.boxesPerRow)
+  );
+  const boxSizePx = Math.max(24, Math.min(Math.floor(sheet.boxSizeMm * pxPerMm), maxFitBoxPx));
   const stageSizePx = Math.round(sheet.stageSizeMm * pxPerMm);
   const entryGapPx = Math.max(6, Math.round(sheet.entryGapMm * pxPerMm));
 
+  const mainHanziBasePx =
+    settings.mainHanziSizePx ?? PRO_TYPOGRAPHY_CONTRAST_DEFAULTS.mainHanziSizePx;
+  const metaBasePx = settings.metaFontSizePx ?? PRO_TYPOGRAPHY_CONTRAST_DEFAULTS.metaFontSizePx;
+  const pinyinFontPx = Math.round(metaBasePx * 1.08);
+  const englishFontPx = Math.max(9, Math.round(metaBasePx * 0.86));
+  const arabicFontPx = Math.max(10, Math.round(metaBasePx * 0.94));
+  const strokeMetaFontPx = Math.max(8.5, Math.round(metaBasePx * 0.76));
+
+  const headerTitle = resolveSheetHeaderTitle(workbookTitle, settings);
+  const footerInstruction = resolveSheetFooterText(settings, sheet.traceBoxes, sheet.boxesPerRow);
+
+  // Slightly widen left info column when large typography is chosen, without squeezing stroke grid
+  const leftInfoWidthPx = isPortrait
+    ? Math.min(245, Math.max(205, Math.round(180 + mainHanziBasePx * 1.1)))
+    : Math.min(310, Math.max(255, Math.round(215 + mainHanziBasePx * 1.5)));
+
   return (
     <article
-      className={`print-sheet mx-auto bg-white border flex flex-col justify-between ${
+      className={`print-sheet mx-auto bg-white border flex flex-col justify-between box-border overflow-hidden ${
         palette.isBw
           ? 'bw-print-sheet border-black shadow-none'
           : 'border-hairline shadow-[0_14px_38px_rgba(30,25,22,0.09)]'
@@ -70,23 +99,63 @@ export const WorkbookPage: React.FC<WorkbookPageProps> = ({
       }}
       aria-label={`Workbook page ${sheet.pageNumber}`}
     >
-      {/* Top Running Header */}
-      <header
-        className="flex items-center justify-between pb-1.5 border-b-2 text-[10.5px] font-medium tracking-[0.05em]"
-        style={{
-          borderBottomColor: palette.accentColor,
-          color: palette.subtleInk,
-        }}
-      >
-        <span className="truncate max-w-[52%] font-semibold" style={{ color: palette.primaryInk }}>
-          {workbookTitle}
-        </span>
-        <span className="font-mono tabular-nums whitespace-nowrap" style={{ color: palette.secondaryInk }}>
-          {settings.pageSize} {settings.orientation === 'landscape' ? 'Landscape' : 'Portrait'} ·{' '}
-          {sheet.entries.length} {sheet.entries.length === 1 ? 'Entry' : 'Entries'} ·{' '}
-          {sheet.boxesPerRow} Boxes/Char ({sheet.totalBoxesOnPage} Boxes)
-        </span>
-      </header>
+      {/* Top Running Header + Optional Printable Student Info Bar */}
+      <div>
+        <header
+          className="flex items-center justify-between gap-3 pb-1.5 border-b-2 text-[10px] font-medium tracking-[0.04em] min-w-0"
+          style={{
+            borderBottomColor: palette.accentColor,
+            color: palette.subtleInk,
+          }}
+        >
+          <span
+            className="truncate min-w-0 font-semibold"
+            style={{ color: palette.primaryInk }}
+            title={headerTitle}
+          >
+            {headerTitle}
+          </span>
+          <span
+            className="font-mono tabular-nums whitespace-nowrap shrink-0"
+            style={{ color: palette.secondaryInk }}
+          >
+            {settings.pageSize} {settings.orientation === 'landscape' ? 'Landscape' : 'Portrait'} ·{' '}
+            {sheet.entries.length} {sheet.entries.length === 1 ? 'Entry' : 'Entries'} ·{' '}
+            {sheet.boxesPerRow} Boxes/Char ({sheet.totalBoxesOnPage} Boxes)
+          </span>
+        </header>
+
+        {settings.showStudentInfoBar && (
+          <div
+            className="flex items-center justify-between gap-6 pt-2 pb-1 text-[11px] font-medium border-b"
+            style={{
+              borderBottomColor: palette.dividerColor,
+              color: palette.primaryInk,
+            }}
+          >
+            <div className="flex items-baseline gap-2 flex-1 min-w-0">
+              <span className="shrink-0 font-semibold">Name:</span>
+              <span
+                className="flex-1 border-b"
+                style={{
+                  borderBottomColor: palette.isBw ? '#000000' : palette.secondaryInk,
+                  height: '12px',
+                }}
+              />
+            </div>
+            <div className="flex items-baseline gap-2 w-52 shrink-0">
+              <span className="shrink-0 font-semibold">Date:</span>
+              <span
+                className="flex-1 border-b"
+                style={{
+                  borderBottomColor: palette.isBw ? '#000000' : palette.secondaryInk,
+                  height: '12px',
+                }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Independent Vocabulary Entry Bands */}
       <div
@@ -99,21 +168,15 @@ export const WorkbookPage: React.FC<WorkbookPageProps> = ({
             sheet.inlineMultiCharStrokes &&
             canInlineMultiCharStrokes(entry, dims.usableWidthMm, sheet.stageSizeMm, isPortrait);
 
-          const heroSizePx = isCompact
-            ? isMultiChar
-              ? 23
-              : 30
-            : isBalanced
-            ? isMultiChar
-              ? 28
-              : 38
-            : Math.max(
-                40,
-                Math.min(
-                  72,
-                  isMultiChar ? settings.characterSizePx * 0.8 : settings.characterSizePx * 1.25
-                )
-              );
+          const multiScale =
+            entry.charResults.length >= 4
+              ? 0.56
+              : entry.charResults.length === 3
+              ? 0.68
+              : isMultiChar
+              ? 0.8
+              : 1;
+          const heroSizePx = Math.max(18, Math.round(mainHanziBasePx * multiScale));
 
           const strokeLabel = isMultiChar
             ? `${entry.totalStrokeCount} strokes (${entry.charResults
@@ -125,7 +188,7 @@ export const WorkbookPage: React.FC<WorkbookPageProps> = ({
             <section
               key={entry.id}
               aria-label={`Vocabulary entry ${entry.text}`}
-              className={`flex flex-col ${idx > 0 ? 'pt-2 border-t' : ''}`}
+              className={`flex flex-col min-w-0 ${idx > 0 ? 'pt-2 border-t' : ''}`}
               style={{
                 gap: isCompact ? '5px' : '9px',
                 borderTopColor: idx > 0 ? palette.dividerColor : undefined,
@@ -133,14 +196,14 @@ export const WorkbookPage: React.FC<WorkbookPageProps> = ({
             >
               {/* Upper Band: Vocabulary Info (Left) + Stroke-Order Diagrams (Right) */}
               <div
-                className="grid items-center gap-3.5"
+                className="grid items-center gap-3.5 min-w-0"
                 style={{
-                  gridTemplateColumns: isPortrait ? '205px 1fr' : '255px 1fr',
+                  gridTemplateColumns: `${leftInfoWidthPx}px minmax(0, 1fr)`,
                 }}
               >
                 {/* Left Vocabulary Info */}
                 <div
-                  className="pr-3 border-r flex items-center gap-3 min-w-0"
+                  className="pr-3 border-r flex items-center gap-2.5 min-w-0"
                   style={{ borderRightColor: palette.dividerColor }}
                 >
                   <div
@@ -154,19 +217,22 @@ export const WorkbookPage: React.FC<WorkbookPageProps> = ({
                     {entry.text}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline gap-2 flex-wrap">
+                    <div className="flex items-baseline gap-1.5 flex-wrap">
                       <span
                         className="font-semibold leading-tight truncate"
                         style={{
                           color: palette.accentColor,
-                          fontSize: isCompact ? '12.5px' : '15.5px',
+                          fontSize: `${pinyinFontPx}px`,
                         }}
                       >
                         {entry.pinyin || '—'}
                       </span>
                       <span
-                        className="font-mono text-[9.5px] tabular-nums whitespace-nowrap"
-                        style={{ color: palette.subtleInk }}
+                        className="font-mono tabular-nums whitespace-nowrap"
+                        style={{
+                          color: palette.subtleInk,
+                          fontSize: `${strokeMetaFontPx}px`,
+                        }}
                       >
                         {strokeLabel}
                       </span>
@@ -176,7 +242,7 @@ export const WorkbookPage: React.FC<WorkbookPageProps> = ({
                       title={entry.meaning}
                       style={{
                         color: palette.secondaryInk,
-                        fontSize: isCompact ? '10px' : '12px',
+                        fontSize: `${englishFontPx}px`,
                         marginTop: '1px',
                       }}
                     >
@@ -190,7 +256,7 @@ export const WorkbookPage: React.FC<WorkbookPageProps> = ({
                         style={{
                           fontFamily: 'var(--font-arabic)',
                           color: palette.primaryInk,
-                          fontSize: isCompact ? '10.5px' : '12.5px',
+                          fontSize: `${arabicFontPx}px`,
                           marginTop: '1px',
                         }}
                       >
@@ -247,16 +313,17 @@ export const WorkbookPage: React.FC<WorkbookPageProps> = ({
               </div>
 
               {/* Lower Band: Independent Full-Width Practice Row for EACH Character */}
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1.5 min-w-0">
                 {entry.charResults.map((charRes, rowIdx) => (
                   <div
                     key={`${entry.id}-practice-${rowIdx}`}
-                    className="flex items-center gap-1.5"
+                    className="flex items-center min-w-0"
+                    style={{ gap: `${rowLabelGapPx}px` }}
                   >
                     {/* Character marker for each independent practice row */}
                     <div
                       className="shrink-0 flex items-center justify-center"
-                      style={{ width: '20px' }}
+                      style={{ width: `${rowLabelWidthPx}px` }}
                     >
                       <span
                         className="text-sm leading-none"
@@ -269,8 +336,8 @@ export const WorkbookPage: React.FC<WorkbookPageProps> = ({
                       </span>
                     </div>
 
-                    {/* Full-width equal square writing practice boxes */}
-                    <div className="flex items-center" style={{ gap: `${boxGapPx}px` }}>
+                    {/* Full-width equal square writing practice boxes strictly clamped inside innerWidthPx */}
+                    <div className="flex items-center min-w-0" style={{ gap: `${boxGapPx}px` }}>
                       {Array.from({ length: sheet.boxesPerRow }).map((_, boxIdx) => (
                         <WritingGridBox
                           key={`box-${boxIdx}`}
@@ -281,6 +348,7 @@ export const WorkbookPage: React.FC<WorkbookPageProps> = ({
                           gridStyle={settings.gridStyle}
                           gridBgColor={palette.gridBgColor}
                           gridBorderColor={palette.gridBorderColor}
+                          gridBorderWidthPx={palette.gridBorderWidthPx}
                           gridLineColor={palette.gridLineColor}
                           gridDiagonalColor={palette.gridDiagonalColor}
                           traceGlyphColor={palette.traceGlyphColor}
@@ -298,17 +366,16 @@ export const WorkbookPage: React.FC<WorkbookPageProps> = ({
 
       {/* Footer */}
       <footer
-        className="flex items-center justify-between pt-1.5 border-t text-[10.5px]"
+        className="flex items-center justify-between gap-4 pt-1.5 border-t text-[10px] min-w-0"
         style={{
           borderTopColor: palette.dividerColor,
           color: palette.subtleInk,
         }}
       >
-        <span>
-          {settings.authorName || 'Hanzi Book Studio'} · Practice: Trace boxes 1–{sheet.traceBoxes},
-          then write from memory in boxes {sheet.traceBoxes + 1}–{sheet.boxesPerRow}
+        <span className="truncate min-w-0" title={footerInstruction}>
+          {footerInstruction}
         </span>
-        <span className="font-mono tabular-nums whitespace-nowrap">
+        <span className="font-mono tabular-nums whitespace-nowrap shrink-0">
           Page {sheet.pageNumber} of {totalPages}
         </span>
       </footer>

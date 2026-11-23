@@ -9,6 +9,7 @@ interface WritingGridBoxProps {
   gridStyle: GridStyle;
   gridBgColor: string;
   gridBorderColor?: string;
+  gridBorderWidthPx?: number;
   gridLineColor: string;
   gridDiagonalColor?: string;
   traceGlyphColor: string;
@@ -23,18 +24,21 @@ export const WritingGridBox: React.FC<WritingGridBoxProps> = ({
   gridStyle,
   gridBgColor,
   gridBorderColor = '#9E8D7A',
+  gridBorderWidthPx = 1,
   gridLineColor,
   gridDiagonalColor,
   traceGlyphColor,
   fontFamily,
 }) => {
-  const glyphFontSize = boxSizePx ? Math.max(24, Math.round(boxSizePx * 0.68)) : 34;
+  const glyphFontSize = boxSizePx ? Math.max(20, Math.round(boxSizePx * 0.68)) : 34;
 
   return (
     <div
-      className="relative aspect-square border overflow-hidden select-none shrink-0"
+      className="relative aspect-square overflow-hidden select-none shrink-0 box-border"
       style={{
         backgroundColor: gridBgColor,
+        borderStyle: 'solid',
+        borderWidth: `${gridBorderWidthPx}px`,
         borderColor: gridBorderColor,
         width: boxSizePx ? `${boxSizePx}px` : undefined,
         height: boxSizePx ? `${boxSizePx}px` : undefined,

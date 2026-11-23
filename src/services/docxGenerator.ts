@@ -28,6 +28,9 @@ import { saveAs } from 'file-saver';
 import { repository } from '../storage/db';
 import {
   ExportRecord,
+  PRO_TYPOGRAPHY_CONTRAST_DEFAULTS,
+  resolveSheetFooterText,
+  resolveSheetHeaderTitle,
   resolveWorkbookPalette,
   WorkbookEntry,
   WorkbookProject,
@@ -415,7 +418,7 @@ async function buildEntryBandBlocks(
   const isMultiChar = entry.charResults.length > 1;
   const isPortrait = settings.orientation === 'portrait';
 
-  const leftRatio = isPortrait ? 0.34 : 0.27;
+  const leftRatio = isPortrait ? 0.35 : 0.28;
   const leftColTwip = Math.round(contentWidthTwip * leftRatio);
   const rightColTwip = contentWidthTwip - leftColTwip;
 
@@ -424,7 +427,23 @@ async function buildEntryBandBlocks(
     : `${entry.totalStrokeCount} ${entry.totalStrokeCount === 1 ? 'stroke' : 'strokes'}`;
 
   // LEFT CELL: Vocabulary Info (Word + Pinyin + Strokes + English Meaning + Optional Arabic)
-  const heroHalfPt = isCompact ? (isMultiChar ? 36 : 46) : isMultiChar ? 48 : 64;
+  const mainHanziBasePx =
+    settings.mainHanziSizePx ?? PRO_TYPOGRAPHY_CONTRAST_DEFAULTS.mainHanziSizePx;
+  const metaBasePx = settings.metaFontSizePx ?? PRO_TYPOGRAPHY_CONTRAST_DEFAULTS.metaFontSizePx;
+  const multiScale =
+    entry.charResults.length >= 4
+      ? 0.56
+      : entry.charResults.length === 3
+      ? 0.68
+      : isMultiChar
+      ? 0.8
+      : 1;
+  const heroHalfPt = Math.max(28, Math.round(mainHanziBasePx * 1.45 * multiScale));
+  const pinyinHalfPt = Math.max(16, Math.round(metaBasePx * 1.7));
+  const englishHalfPt = Math.max(13, Math.round(metaBasePx * 1.32));
+  const strokeHalfPt = Math.max(12, Math.round(metaBasePx * 1.2));
+  const arabicHalfPt = Math.max(14, Math.round(metaBasePx * 1.42));
+
   const showArabicRow =
     settings.showArabicTranslation !== false && Boolean(entry.arabicMeaning?.trim());
 
@@ -441,7 +460,7 @@ async function buildEntryBandBlocks(
         new TextRun({
           text: `  ${entry.pinyin || '—'}`,
           font: 'Calibri',
-          size: isCompact ? 21 : 26,
+          size: pinyinHalfPt,
           bold: true,
           color: accent,
         }),
@@ -453,13 +472,13 @@ async function buildEntryBandBlocks(
         new TextRun({
           text: `${entry.meaning || 'No English meaning'}  ·  `,
           font: 'Calibri',
-          size: isCompact ? 15 : 18,
+          size: englishHalfPt,
           color: secondaryInk,
         }),
         new TextRun({
           text: strokeBreakdown,
           font: 'Calibri',
-          size: isCompact ? 14 : 17,
+          size: strokeHalfPt,
           bold: true,
           color: primaryInk,
         }),
@@ -474,7 +493,7 @@ async function buildEntryBandBlocks(
               new TextRun({
                 text: entry.arabicMeaning!.trim(),
                 font: arabicFont(),
-                size: isCompact ? 17 : 20,
+                size: arabicHalfPt,
                 rightToLeft: true,
                 color: primaryInk,
               }),
@@ -670,12 +689,26 @@ async function buildEntryBandBlocks(
   });
 
   // LOWER BAND: Independent full-width editable writing table for EACH character in the entry
-  const labelColTwip = mmToTwip(6.8);
-  const maxBoxTwip = Math.floor((contentWidthTwip - labelColTwip) / sheet.boxesPerRow);
+  const labelColTwip = mmToTwip(7.4);
+  const safeContentTwip = Math.max(1000, contentWidthTwip - 16);
+  const maxBoxTwip = Math.floor((safeContentTwip - labelColTwip) / Math.max(1, sheet.boxesPerRow));
   const boxSideTwip = Math.min(maxBoxTwip, mmToTwip(sheet.boxSizeMm));
-  const boxSidePx = Math.max(34, Math.round(boxSideTwip / 15));
-  const guidePx = Math.max(30, boxSidePx - 2);
-  const traceFontHalfPt = Math.max(30, Math.round(boxSidePx * 0.68 * 1.45));
+  const boxSidePx = Math.max(32, Math.round(boxSideTwip / 15));
+  const guidePx = Math.max(28, boxSidePx - 2);
+  const traceFontHalfPt = Math.max(28, Math.round(boxSidePx * 0.68 * 1.45));
+
+  const outerBorderSize =
+    settings.gridBorderThickness === 'thin'
+      ? 4
+      : settings.gridBorderThickness === 'bold'
+      ? 12
+      : 8;
+  const innerBorderSize =
+    settings.gridBorderThickness === 'thin'
+      ? 4
+      : settings.gridBorderThickness === 'bold'
+      ? 10
+      : 6;
 
   const blocks: Array<Paragraph | Table> = [upperTable];
 
@@ -690,7 +723,7 @@ async function buildEntryBandBlocks(
         top: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
         bottom: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
         left: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
-        right: { style: BorderStyle.SINGLE, size: 8, color: gridBorderHex },
+        right: { style: BorderStyle.SINGLE, size: outerBorderSize, color: gridBorderHex },
       },
       children: [
         new Paragraph({
@@ -758,12 +791,12 @@ async function buildEntryBandBlocks(
       width: { size: labelColTwip + boxSideTwip * sheet.boxesPerRow, type: WidthType.DXA },
       layout: TableLayoutType.FIXED,
       borders: {
-        top: { style: BorderStyle.SINGLE, size: 8, color: gridBorderHex },
-        bottom: { style: BorderStyle.SINGLE, size: 8, color: gridBorderHex },
+        top: { style: BorderStyle.SINGLE, size: outerBorderSize, color: gridBorderHex },
+        bottom: { style: BorderStyle.SINGLE, size: outerBorderSize, color: gridBorderHex },
         left: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
-        right: { style: BorderStyle.SINGLE, size: 8, color: gridBorderHex },
-        insideHorizontal: { style: BorderStyle.SINGLE, size: 6, color: gridBorderHex },
-        insideVertical: { style: BorderStyle.SINGLE, size: 6, color: gridBorderHex },
+        right: { style: BorderStyle.SINGLE, size: outerBorderSize, color: gridBorderHex },
+        insideHorizontal: { style: BorderStyle.SINGLE, size: innerBorderSize, color: gridBorderHex },
+        insideVertical: { style: BorderStyle.SINGLE, size: innerBorderSize, color: gridBorderHex },
       },
       rows: [
         new TableRow({
@@ -820,8 +853,68 @@ export async function generateWorkbookDocx(
   const guidelinePngBytes = await renderGridGuidelinePngBytes(
     settings.gridStyle,
     palette.gridLineColor,
-    180
+    180,
+    palette.gridDiagonalColor
   );
+
+  const primaryInk = cleanHex(palette.primaryInk, '1E1916');
+  const dividerHex = cleanHex(palette.dividerColor, 'E5DDD1');
+
+  const buildStudentInfoBar = (): Table => {
+    const nameColTwip = Math.round(contentWidthTwip * 0.65);
+    const dateColTwip = contentWidthTwip - nameColTwip;
+    return new Table({
+      width: { size: contentWidthTwip, type: WidthType.DXA },
+      layout: TableLayoutType.FIXED,
+      borders: {
+        ...getNoBorders(),
+        bottom: { style: BorderStyle.SINGLE, size: 4, color: dividerHex },
+      },
+      rows: [
+        new TableRow({
+          children: [
+            new TableCell({
+              width: { size: nameColTwip, type: WidthType.DXA },
+              margins: { top: 20, bottom: 55, left: 0, right: 120 },
+              children: [
+                new Paragraph({
+                  spacing: { before: 0, after: 0 },
+                  children: [
+                    new TextRun({
+                      text: 'Name: ____________________________________',
+                      font: 'Calibri',
+                      size: 18,
+                      bold: true,
+                      color: primaryInk,
+                    }),
+                  ],
+                }),
+              ],
+            }),
+            new TableCell({
+              width: { size: dateColTwip, type: WidthType.DXA },
+              margins: { top: 20, bottom: 55, left: 120, right: 0 },
+              children: [
+                new Paragraph({
+                  alignment: AlignmentType.RIGHT,
+                  spacing: { before: 0, after: 0 },
+                  children: [
+                    new TextRun({
+                      text: 'Date: _______________________',
+                      font: 'Calibri',
+                      size: 18,
+                      bold: true,
+                      color: primaryInk,
+                    }),
+                  ],
+                }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    });
+  };
 
   const bodyChildren: Array<Paragraph | Table> = [];
 
@@ -839,6 +932,10 @@ export async function generateWorkbookDocx(
 
   for (let sIdx = 0; sIdx < sheets.length; sIdx++) {
     const sheet = sheets[sIdx];
+
+    if (settings.showStudentInfoBar) {
+      bodyChildren.push(buildStudentInfoBar());
+    }
 
     for (let eIdx = 0; eIdx < sheet.entries.length; eIdx++) {
       const entry = sheet.entries[eIdx];
@@ -879,15 +976,15 @@ export async function generateWorkbookDocx(
 
   const minBoxes = sheets.length > 0 ? Math.min(...sheets.map((s) => s.boxesPerRow)) : 10;
   const maxBoxes = sheets.length > 0 ? Math.max(...sheets.map((s) => s.boxesPerRow)) : 10;
-  const traceCount = sheets[0]?.traceBoxes ?? Math.max(1, settings.traceBoxCount || 2);
+  const traceCount =
+    sheets[0]?.traceBoxes ??
+    (typeof settings.traceBoxCount === 'number' ? settings.traceBoxCount : 2);
   const headerBoxesSummary =
     minBoxes === maxBoxes
-      ? `${minBoxes} Boxes/Char (${traceCount} Trace · ${minBoxes - traceCount} Empty)`
+      ? `${minBoxes} Boxes/Char (${traceCount} Trace · ${Math.max(0, minBoxes - traceCount)} Empty)`
       : `${minBoxes}–${maxBoxes} Boxes/Char (${traceCount} Trace)`;
-  const footerInstruction =
-    minBoxes === maxBoxes
-      ? `Trace boxes 1–${traceCount}, write from memory in boxes ${traceCount + 1}–${maxBoxes}`
-      : `Trace first ${traceCount} boxes, write from memory in remaining boxes`;
+  const headerTitle = resolveSheetHeaderTitle(workbook.title, settings);
+  const footerInstruction = resolveSheetFooterText(settings, traceCount, maxBoxes);
 
   const doc = new Document({
     creator: settings.authorName || 'Hanzi Book Studio',
@@ -925,7 +1022,7 @@ export async function generateWorkbookDocx(
                 },
                 children: [
                   new TextRun({
-                    text: `${workbook.title}   ·   ${settings.pageSize} ${settings.orientation === 'landscape' ? 'Landscape' : 'Portrait'}   ·   ${headerBoxesSummary}`,
+                    text: `${headerTitle}   ·   ${settings.pageSize} ${settings.orientation === 'landscape' ? 'Landscape' : 'Portrait'}   ·   ${headerBoxesSummary}`,
                     font: 'Calibri',
                     size: 15,
                     color: subtleInk,
@@ -942,7 +1039,7 @@ export async function generateWorkbookDocx(
                 alignment: AlignmentType.RIGHT,
                 children: [
                   new TextRun({
-                    text: `${settings.authorName || 'Hanzi Book Studio'}  ·  ${footerInstruction}  ·  Page `,
+                    text: `${footerInstruction}  ·  Page `,
                     font: 'Calibri',
                     size: 15,
                     color: subtleInk,

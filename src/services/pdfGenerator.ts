@@ -2,6 +2,9 @@ import { jsPDF } from 'jspdf';
 import { repository } from '../storage/db';
 import {
   ExportRecord,
+  PRO_TYPOGRAPHY_CONTRAST_DEFAULTS,
+  resolveSheetFooterText,
+  resolveSheetHeaderTitle,
   resolveWorkbookPalette,
   WorkbookEntry,
   WorkbookProject,
@@ -61,7 +64,7 @@ function drawWritingBox(
   ctx.restore();
 
   ctx.strokeStyle = palette.gridBorderColor;
-  ctx.lineWidth = 1.4;
+  ctx.lineWidth = Number((palette.gridBorderWidthPx * 1.18).toFixed(2));
   ctx.strokeRect(x, y, size, size);
 
   if (isTrace && char) {
@@ -178,54 +181,96 @@ function renderPaginatedSheetCanvas(
   const isCompact = sheet.density === 'compact';
   const isPortrait = settings.orientation === 'portrait';
 
+  const headerTitle = resolveSheetHeaderTitle(workbook.title, settings);
+  const footerInstruction = resolveSheetFooterText(settings, sheet.traceBoxes, sheet.boxesPerRow);
+
   // Header
   const headerTopY = Math.round(marginPx * 0.55);
+  const headerRightText = `${settings.pageSize} ${settings.orientation.toUpperCase()} · ${sheet.entries.length} Entries · ${sheet.boxesPerRow} Boxes/Char (${sheet.totalBoxesOnPage} Boxes)`;
+  ctx.font = `500 14.5px "JetBrains Mono", monospace`;
+  const rightMetaW = ctx.measureText(headerRightText).width;
+  ctx.fillStyle = palette.subtleInk;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'top';
+  ctx.fillText(headerRightText, contentX + contentW, headerTopY);
+
   ctx.fillStyle = palette.primaryInk;
   ctx.font = `600 17px "Plus Jakarta Sans", sans-serif`;
   ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  ctx.fillText(workbook.title, contentX, headerTopY);
-
-  ctx.fillStyle = palette.subtleInk;
-  ctx.font = `500 15px "JetBrains Mono", monospace`;
-  ctx.textAlign = 'right';
-  ctx.fillText(
-    `${settings.pageSize} ${settings.orientation.toUpperCase()} · ${sheet.entries.length} Entries · ${sheet.boxesPerRow} Boxes/Char (${sheet.totalBoxesOnPage} Boxes)`,
-    contentX + contentW,
-    headerTopY
-  );
+  const maxHeaderTitleW = Math.max(120, contentW - rightMetaW - 24);
+  ctx.fillText(headerTitle, contentX, headerTopY, maxHeaderTitleW);
 
   ctx.fillStyle = palette.accentColor;
   ctx.fillRect(contentX, headerTopY + 23, contentW, 2.5);
+
+  let bodyTopY = headerTopY + 34;
+
+  // Optional Printable Student Info Bar
+  if (settings.showStudentInfoBar) {
+    const barY = headerTopY + 34;
+    ctx.fillStyle = palette.primaryInk;
+    ctx.font = `600 16px "Plus Jakarta Sans", sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText('Name:', contentX, barY);
+
+    const nameLineStartX = contentX + 58;
+    const dateLabelX = contentX + contentW - 280;
+    const lineColor = palette.isBw ? '#000000' : palette.secondaryInk;
+
+    ctx.fillStyle = lineColor;
+    ctx.fillRect(nameLineStartX, barY + 18, Math.max(100, dateLabelX - nameLineStartX - 32), 1.3);
+
+    ctx.fillStyle = palette.primaryInk;
+    ctx.fillText('Date:', dateLabelX, barY);
+    ctx.fillStyle = lineColor;
+    ctx.fillRect(dateLabelX + 50, barY + 18, Math.max(80, contentX + contentW - (dateLabelX + 50)), 1.3);
+
+    ctx.fillStyle = palette.dividerColor;
+    ctx.fillRect(contentX, barY + 28, contentW, 1);
+    bodyTopY = barY + 36;
+  }
 
   // Footer
   const footerLineY = heightPx - marginPx - 18;
   ctx.fillStyle = palette.dividerColor;
   ctx.fillRect(contentX, footerLineY, contentW, 1.5);
   ctx.fillStyle = palette.subtleInk;
-  ctx.font = `500 14.5px "Plus Jakarta Sans", sans-serif`;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  ctx.fillText(
-    `${settings.authorName || 'Hanzi Book Studio'} · Practice: Trace boxes 1–${sheet.traceBoxes}, then write from memory in boxes ${sheet.traceBoxes + 1}–${sheet.boxesPerRow}`,
-    contentX,
-    footerLineY + 7
-  );
+  ctx.font = `500 14px "Plus Jakarta Sans", sans-serif`;
+  const pageText = `Page ${sheet.pageNumber} of ${totalPages}`;
+  const pageTextW = ctx.measureText(pageText).width;
   ctx.textAlign = 'right';
-  ctx.fillText(`Page ${sheet.pageNumber} of ${totalPages}`, contentX + contentW, footerLineY + 7);
+  ctx.textBaseline = 'top';
+  ctx.fillText(pageText, contentX + contentW, footerLineY + 7);
 
-  // Exact vertical geometry inside [bodyTopY, bodyBottomY]
-  const bodyTopY = headerTopY + 34;
+  ctx.textAlign = 'left';
+  ctx.fillText(footerInstruction, contentX, footerLineY + 7, Math.max(160, contentW - pageTextW - 24));
+
+  // Exact vertical & horizontal geometry inside [bodyTopY, bodyBottomY]
   const bodyBottomY = footerLineY - 8;
   const maxBodyH = bodyBottomY - bodyTopY;
 
-  const boxSizePx = Math.round(sheet.boxSizeMm * pxPerMm);
-  const boxGapPx = Math.max(4, Math.round(sheet.boxGapMm * pxPerMm));
+  const labelW = 34;
+  const boxGapPx = Math.max(3, Math.floor(sheet.boxGapMm * pxPerMm));
+  const maxFitBoxPx = Math.floor(
+    (contentW - labelW - boxGapPx * Math.max(0, sheet.boxesPerRow - 1)) /
+      Math.max(1, sheet.boxesPerRow)
+  );
+  const boxSizePx = Math.max(32, Math.min(Math.floor(sheet.boxSizeMm * pxPerMm), maxFitBoxPx));
   const stageSizePx = Math.round(sheet.stageSizeMm * pxPerMm);
   const stageGapPx = 5;
   const upperToPracticeGapPx = Math.round(1.6 * pxPerMm);
   const multiRowGapPx = Math.round(1.3 * pxPerMm);
-  const leftW = Math.round(contentW * (isPortrait ? 0.34 : 0.27));
+
+  const mainHanziBasePx =
+    settings.mainHanziSizePx ?? PRO_TYPOGRAPHY_CONTRAST_DEFAULTS.mainHanziSizePx;
+  const metaBasePx = settings.metaFontSizePx ?? PRO_TYPOGRAPHY_CONTRAST_DEFAULTS.metaFontSizePx;
+  const pdfPinyinPx = Math.round(metaBasePx * 1.52);
+  const pdfEnglishPx = Math.max(12, Math.round(metaBasePx * 1.18));
+  const pdfArabicPx = Math.max(13, Math.round(metaBasePx * 1.28));
+
+  const leftRatio = isPortrait ? 0.35 : 0.28;
+  const leftW = Math.round(contentW * leftRatio);
   const rightX = contentX + leftW + 18;
   const maxCols = getStrokeColumnsForWidth(dims.usableWidthMm, sheet.stageSizeMm, isPortrait);
 
@@ -244,9 +289,14 @@ function renderPaginatedSheetCanvas(
     }
     const hasArabic =
       settings.showArabicTranslation !== false && Boolean(entry.arabicMeaning?.trim());
-    const minInfoH = isCompact
-      ? Math.max(hasArabic ? 54 : 46, stageSizePx + 4)
-      : Math.max(hasArabic ? 66 : 58, stageSizePx + 6);
+    const scaledHanziH = Math.round(mainHanziBasePx * 1.48);
+    const metaStackH = pdfPinyinPx + pdfEnglishPx + (hasArabic ? pdfArabicPx + 14 : 10);
+    const minInfoH = Math.max(
+      isCompact ? (hasArabic ? 54 : 46) : hasArabic ? 66 : 58,
+      stageSizePx + 4,
+      scaledHanziH + 4,
+      metaStackH
+    );
     const strokeH = strokeRows * stageSizePx + Math.max(0, strokeRows - 1) * stageGapPx;
     const upperH = Math.max(minInfoH, strokeH);
     const practiceH =
@@ -258,7 +308,7 @@ function renderPaginatedSheetCanvas(
   const sumEntryH = entryHeights.reduce((sum, m) => sum + m.totalH, 0);
   const gapSlots = Math.max(1, sheet.entries.length - 1);
   const rawGap = sheet.entries.length > 1 ? Math.floor((maxBodyH - sumEntryH) / gapSlots) : 0;
-  const entryGapPx = Math.max(10, Math.min(Math.round(sheet.entryGapMm * pxPerMm * 1.6), rawGap));
+  const entryGapPx = Math.max(8, Math.min(Math.round(sheet.entryGapMm * pxPerMm * 1.6), rawGap));
 
   // Center the vertical stack nicely within [bodyTopY, bodyBottomY]
   const finalStackH = sumEntryH + Math.max(0, sheet.entries.length - 1) * entryGapPx;
@@ -276,37 +326,47 @@ function renderPaginatedSheetCanvas(
     const bandTopY = cursorY;
 
     // Left Vocabulary Info (vertically centered inside upperH)
-    const heroFontPx = isCompact ? (isMulti ? 32 : 42) : isMulti ? 42 : 54;
+    const multiScale =
+      entry.charResults.length >= 4
+        ? 0.56
+        : entry.charResults.length === 3
+        ? 0.68
+        : isMulti
+        ? 0.8
+        : 1;
+    const heroFontPx = Math.max(26, Math.round(mainHanziBasePx * 1.48 * multiScale));
     const infoCenterY = bandTopY + metrics.upperH / 2;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = palette.primaryInk;
     ctx.font = `400 ${heroFontPx}px ${settings.fontFamily}`;
-    ctx.fillText(entry.text, contentX, infoCenterY);
+    ctx.fillText(entry.text, contentX, infoCenterY, leftW * 0.48);
 
-    const measuredHeroW = ctx.measureText(entry.text).width;
-    const textColX = contentX + Math.min(leftW * 0.5, measuredHeroW + 14);
+    const measuredHeroW = Math.min(leftW * 0.48, ctx.measureText(entry.text).width);
+    const textColX = contentX + measuredHeroW + 14;
+    const textColMaxW = Math.max(70, contentX + leftW - textColX - 4);
     const hasArabic =
       settings.showArabicTranslation !== false && Boolean(entry.arabicMeaning?.trim());
-    const stackH = hasArabic ? (isCompact ? 50 : 60) : isCompact ? 40 : 44;
+    const stackH = pdfPinyinPx + pdfEnglishPx + (hasArabic ? pdfArabicPx + 10 : 6);
     const infoStartY = bandTopY + Math.max(1, (metrics.upperH - stackH) / 2);
 
     ctx.textBaseline = 'top';
     ctx.fillStyle = palette.accentColor;
-    ctx.font = `600 ${isCompact ? 18 : 21}px "Plus Jakarta Sans", sans-serif`;
-    ctx.fillText(entry.pinyin || '—', textColX, infoStartY);
+    ctx.font = `600 ${pdfPinyinPx}px "Plus Jakarta Sans", sans-serif`;
+    ctx.fillText(entry.pinyin || '—', textColX, infoStartY, textColMaxW);
 
     const strokeLabel = isMulti
       ? `${entry.totalStrokeCount} str (${entry.charResults.map((c) => c.strokeCount).join('+')})`
       : `${entry.totalStrokeCount} strokes`;
     ctx.fillStyle = palette.secondaryInk;
-    ctx.font = `400 ${isCompact ? 13 : 15}px "Plus Jakarta Sans", sans-serif`;
+    ctx.font = `400 ${pdfEnglishPx}px "Plus Jakarta Sans", sans-serif`;
     const maxMeaningLen = isPortrait ? 18 : 28;
     const clippedMeaning = (entry.meaning || 'No English meaning').slice(0, maxMeaningLen);
     ctx.fillText(
       `${clippedMeaning} · ${strokeLabel}`,
       textColX,
-      infoStartY + (isCompact ? 20 : 24)
+      infoStartY + pdfPinyinPx + 3,
+      textColMaxW
     );
 
     if (hasArabic) {
@@ -315,10 +375,15 @@ function renderPaginatedSheetCanvas(
       ctx.textAlign = 'right';
       ctx.textBaseline = 'top';
       ctx.fillStyle = palette.primaryInk;
-      ctx.font = `500 ${isCompact ? 14 : 16}px "Noto Sans Arabic", Tahoma, sans-serif`;
+      ctx.font = `500 ${pdfArabicPx}px "Noto Sans Arabic", Tahoma, sans-serif`;
       const arabicRightX = contentX + leftW - 4;
       const clippedArabic = entry.arabicMeaning!.trim().slice(0, isPortrait ? 20 : 28);
-      ctx.fillText(clippedArabic, arabicRightX, infoStartY + (isCompact ? 35 : 42));
+      ctx.fillText(
+        clippedArabic,
+        arabicRightX,
+        infoStartY + pdfPinyinPx + pdfEnglishPx + 7,
+        textColMaxW
+      );
       ctx.restore();
     }
 
@@ -401,7 +466,6 @@ function renderPaginatedSheetCanvas(
 
     // Lower Independent Full-Width Practice Rows (1 row of sheet.boxesPerRow boxes per character)
     let practiceY = bandTopY + metrics.upperH + upperToPracticeGapPx;
-    const labelW = 30;
 
     for (const charRes of entry.charResults) {
       ctx.fillStyle = palette.isBw ? '#000000' : '#5E544B';

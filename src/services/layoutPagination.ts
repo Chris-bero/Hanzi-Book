@@ -45,7 +45,8 @@ export function getPageDimensionsMm(settings: WorkbookSettings): PageDimensionsM
   const widthMm = settings.orientation === 'landscape' ? base.h : base.w;
   const heightMm = settings.orientation === 'landscape' ? base.w : base.h;
   const margin = Math.max(8, Math.min(24, settings.pageMarginMm));
-  const headerFooterReserveMm = 15;
+  const studentBarReserveMm = settings.showStudentInfoBar ? 7.5 : 0;
+  const headerFooterReserveMm = 15 + studentBarReserveMm;
 
   return {
     widthMm,
@@ -64,7 +65,7 @@ export function getStrokeColumnsForWidth(
   stageSizeMm: number,
   isPortrait: boolean
 ): number {
-  const infoRatio = isPortrait ? 0.34 : 0.27;
+  const infoRatio = isPortrait ? 0.35 : 0.28;
   const strokeAreaMm = usableWidthMm * (1 - infoRatio) - 8;
   const tileStepMm = stageSizeMm + 1.1;
   return Math.max(6, Math.min(22, Math.floor(strokeAreaMm / tileStepMm)));
@@ -116,7 +117,8 @@ function measureEntryHeightMm(
   stageSizeMm: number,
   boxSizeMm: number,
   isPortrait: boolean,
-  allowInlineMulti: boolean
+  allowInlineMulti: boolean,
+  settings?: WorkbookSettings
 ): number {
   const charCount = Math.max(1, entry.charResults.length);
   const maxCols = getStrokeColumnsForWidth(usableWidthMm, stageSizeMm, isPortrait);
@@ -131,7 +133,15 @@ function measureEntryHeightMm(
     }
   }
 
-  const minInfoHeightMm = stageSizeMm < 10 ? 9.4 : 11.6;
+  const mainHanziPx = settings?.mainHanziSizePx ?? 34;
+  const metaPx = settings?.metaFontSizePx ?? 13;
+  const hasArabic =
+    settings?.showArabicTranslation !== false && Boolean(entry.arabicMeaning?.trim());
+  const hanziHeightMm = mainHanziPx / 3.3;
+  const metaStackMm = (metaPx * (hasArabic ? 3.55 : 2.55)) / 3.3;
+  const baseInfoHeightMm = stageSizeMm < 10 ? 9.4 : 11.6;
+  const minInfoHeightMm = Math.max(baseInfoHeightMm, hanziHeightMm, metaStackMm);
+
   const strokesHeightMm = strokeRowsTotal * stageSizeMm + Math.max(0, strokeRowsTotal - 1) * 1.0;
   const upperBandMm = Math.max(minInfoHeightMm, strokesHeightMm);
 
@@ -160,7 +170,8 @@ export function estimateEntryHeightMm(
       targets.stageMm,
       targets.boxMm,
       isPortrait,
-      compactMode
+      compactMode,
+      settings
     ) + minDividerGapMm
   );
 }
@@ -180,7 +191,9 @@ export function paginateWorkbookEntries(
   const isPortrait = settings.orientation === 'portrait';
   const maxEntriesPerPage = Math.max(1, Math.min(7, settings.charactersPerPage));
   const fillMode = settings.boxFillMode ?? 'maximize';
-  const traceBoxes = Math.max(2, Math.min(4, settings.traceBoxCount || MANDATORY_TRACE_BOXES));
+  const rawTraceCount =
+    typeof settings.traceBoxCount === 'number' ? settings.traceBoxCount : MANDATORY_TRACE_BOXES;
+  const traceBoxes = Math.max(0, Math.min(4, Math.round(rawTraceCount)));
 
   const pagesRaw: WorkbookEntry[][] = [];
   let currentEntries: WorkbookEntry[] = [];
@@ -223,9 +236,11 @@ export function paginateWorkbookEntries(
     const inlineMultiCharStrokes = density === 'compact';
     const targets = getDensityTargets(settings, density);
 
-    const labelReserveMm = 7.2;
+    // Reserve exact label width + safe right-edge margin so boxes never clip horizontally
+    const labelReserveMm = 8.2;
+    const rightSafetyMm = 1.4;
     const boxGapMm = targets.gapMm;
-    const availBoxStripMm = dims.usableWidthMm - labelReserveMm;
+    const availBoxStripMm = Math.max(60, dims.usableWidthMm - labelReserveMm - rightSafetyMm);
 
     let stageSizeMm = targets.stageMm;
     let boxSizeMm = targets.boxMm;
@@ -243,7 +258,8 @@ export function paginateWorkbookEntries(
             stageSizeMm,
             boxSizeMm,
             isPortrait,
-            inlineMultiCharStrokes
+            inlineMultiCharStrokes,
+            settings
           ),
         0
       ) +
@@ -257,13 +273,13 @@ export function paginateWorkbookEntries(
       entryGapMm = Math.max(1.8, Number((entryGapMm * ratio).toFixed(2)));
       totalHeight = computeTotalPageHeight();
 
-      while (totalHeight > maxAllowedBodyMm && boxSizeMm > 9.6) {
+      while (totalHeight > maxAllowedBodyMm && boxSizeMm > 9.4) {
         boxSizeMm = Number((boxSizeMm - 0.35).toFixed(2));
         totalHeight = computeTotalPageHeight();
       }
     }
 
-    // Compute horizontal box count across the full printable width
+    // Compute horizontal box count across the full printable width without right-edge overflow
     let boxesPerRow: number;
     if (fillMode === 'fixed10') {
       boxesPerRow = MANDATORY_MIN_BOXES;
@@ -271,18 +287,14 @@ export function paginateWorkbookEntries(
         (availBoxStripMm - boxGapMm * (boxesPerRow - 1)) / boxesPerRow;
       boxSizeMm = Math.min(boxSizeMm, Math.floor(maxBoxFor10 * 100) / 100);
     } else {
-      // Maximize number of equal square boxes across 100% of available horizontal width
       const maxFit = Math.floor((availBoxStripMm + boxGapMm) / (boxSizeMm + boxGapMm));
       boxesPerRow = Math.max(MANDATORY_MIN_BOXES, maxFit);
 
-      // Compute exact boxSizeMm (floored to 0.01mm) so all boxesPerRow fit edge-to-edge without overflow
       const exactFitBoxMm = (availBoxStripMm - boxGapMm * (boxesPerRow - 1)) / boxesPerRow;
-      // Keep boxSizeMm <= vertical budget while filling edge-to-edge cleanly
       if (exactFitBoxMm < boxSizeMm) {
         boxSizeMm = Math.floor(exactFitBoxMm * 100) / 100;
       } else {
-        // Check if slightly larger boxSizeMm still fits vertically to fill the last 1–2mm cleanly
-        const candidateBoxMm = Math.floor(Math.min(exactFitBoxMm, boxSizeMm + 0.6) * 100) / 100;
+        const candidateBoxMm = Math.floor(Math.min(exactFitBoxMm, boxSizeMm + 0.5) * 100) / 100;
         const prevBox = boxSizeMm;
         boxSizeMm = candidateBoxMm;
         if (computeTotalPageHeight() > maxAllowedBodyMm) {
@@ -291,7 +303,7 @@ export function paginateWorkbookEntries(
       }
     }
 
-    const emptyBoxes = Math.max(1, boxesPerRow - traceBoxes);
+    const emptyBoxes = Math.max(0, boxesPerRow - traceBoxes);
 
     return {
       pageNumber: idx + 1,
@@ -319,7 +331,8 @@ export function paginateWorkbookEntries(
 export async function renderGridGuidelinePngBytes(
   gridStyle: GridStyle,
   gridLineColor: string,
-  pixelSize = 180
+  pixelSize = 180,
+  gridDiagonalColor?: string
 ): Promise<Uint8Array> {
   const canvas = document.createElement('canvas');
   canvas.width = pixelSize;
@@ -344,7 +357,8 @@ export async function renderGridGuidelinePngBytes(
     ctx.stroke();
 
     if (gridStyle === 'mi') {
-      ctx.globalAlpha = 0.65;
+      ctx.strokeStyle = gridDiagonalColor || gridLineColor || '#C9BCA9';
+      ctx.globalAlpha = gridDiagonalColor ? 1 : 0.65;
       ctx.lineWidth = Math.max(1, pixelSize * 0.008);
       ctx.beginPath();
       ctx.moveTo(0, 0);
